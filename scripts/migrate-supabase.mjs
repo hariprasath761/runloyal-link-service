@@ -1,11 +1,35 @@
 #!/usr/bin/env node
 
 import fs from 'node:fs/promises';
+import path from 'node:path';
 
 import { query } from '../src/lib/database.js';
 import { validateApp } from '../src/store/schema.js';
 
 const state = JSON.parse(await fs.readFile(new URL('../data/apps.json', import.meta.url), 'utf8'));
+
+const migration = await fs.readFile(
+    new URL('../supabase/migrations/001_initial.sql', import.meta.url),
+    'utf8',
+);
+await query(migration);
+
+const mimeByExtension = {
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.png': 'image/png',
+    '.webp': 'image/webp',
+};
+
+async function databaseIcon(iconPath) {
+    if (!iconPath || iconPath.startsWith('data:')) return iconPath || null;
+    const filename = path.basename(iconPath);
+    const file = new URL(`../data/uploads/${filename}`, import.meta.url);
+    const mime = mimeByExtension[path.extname(filename).toLowerCase()];
+    if (!mime) throw new Error(`Unsupported icon extension for ${filename}`);
+    const bytes = await fs.readFile(file);
+    return `data:${mime};base64,${bytes.toString('base64')}`;
+}
 
 await query(
     `insert into app_settings (id, portal_url, updated_at) values (true, $1, now())
@@ -17,6 +41,7 @@ for (const input of state.apps || []) {
     const result = validateApp(input);
     if (!result.ok) throw new Error(`${input.slug || '(unknown app)'}: ${result.errors.join('; ')}`);
     const app = result.value;
+    app.iconPath = await databaseIcon(app.iconPath);
     await query(
         `insert into apps
       (slug, display_name, tagline, enabled, icon_path, ios, android, behavior,

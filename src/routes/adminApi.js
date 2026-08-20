@@ -1,11 +1,9 @@
 import crypto from 'node:crypto';
-import fs from 'node:fs';
-import path from 'node:path';
 
 import express from 'express';
 import multer from 'multer';
 
-import { ADMIN_TOKEN, LINK_HOST, UPLOADS_DIR } from '../config.js';
+import { ADMIN_TOKEN, LINK_HOST } from '../config.js';
 import { buildAasa, buildAssetlinks } from './wellKnown.js';
 import {
   deleteApp,
@@ -162,16 +160,9 @@ router.post(
     if (!app) return res.status(404).json({ error: 'unknown app' });
     if (!req.file) return res.status(400).json({ error: 'no file uploaded (field name: icon)' });
 
-    const ext = ALLOWED_MIME.get(req.file.mimetype);
-    // Content-hashed filename so a replaced icon gets a new URL and no CDN or
-    // browser cache can serve the previous one.
-    const hash = crypto.createHash('sha256').update(req.file.buffer).digest('hex').slice(0, 12);
-    const filename = `${slug}-${hash}${ext}`;
-
-    fs.mkdirSync(UPLOADS_DIR, { recursive: true });
-    fs.writeFileSync(path.join(UPLOADS_DIR, filename), req.file.buffer);
-
-    const iconPath = `/uploads/${filename}`;
+    // Store the image in Supabase as a self-contained data URI. No local path
+    // or filesystem write is used, so this works across Vercel instances.
+    const iconPath = `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;
     await setAppIcon(slug, iconPath);
 
     res.json({ slug, iconPath });
