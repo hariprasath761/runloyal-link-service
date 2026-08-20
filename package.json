@@ -14,6 +14,7 @@
     "admin:build": "vite build --config admin/vite.config.js",
     "build": "npm run admin:build",
     "build:static": "node scripts/build-static.js",
+    "migrate:supabase": "node scripts/migrate-supabase.mjs",
     "deploy": "npm run build:static && npm test && firebase deploy --only hosting",
     "verify": "bash scripts/verify.sh",
     "test": "node scripts/test-boot.mjs"
@@ -23,7 +24,8 @@
     "ejs": "^3.1.10",
     "express": "^4.21.2",
     "multer": "^2.2.0",
-    "qrcode": "^1.5.4"
+    "qrcode": "^1.5.4",
+    "pg": "^8.13.1"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.4",

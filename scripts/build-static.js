@@ -317,8 +317,8 @@ function writeFirebaseJson(apps, legacyCodes) {
 /* ── Entry ────────────────────────────────────────────────────────────────── */
 
 async function main() {
-  const state = getState();
-  const apps = getEnabledApps();
+  const state = await getState();
+  const apps = await getEnabledApps();
 
   if (apps.length === 0) {
     console.error('No enabled apps in data/apps.json — nothing to build.');

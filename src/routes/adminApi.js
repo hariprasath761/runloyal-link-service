@@ -10,6 +10,7 @@ import { buildAasa, buildAssetlinks } from './wellKnown.js';
 import {
   deleteApp,
   deleteLegacyCode,
+  getEnabledApps,
   getApp,
   getState,
   setAppIcon,
@@ -71,48 +72,53 @@ const upload = multer({
 
 /* ── Reads ────────────────────────────────────────────────────────────────── */
 
-router.get('/api/admin/config', requireToken, (req, res) => {
-  const state = getState();
-  res.json({
-    linkHost: LINK_HOST,
-    portalUrl: state.portalUrl,
-    behaviors: BEHAVIORS,
-    platforms: PLATFORMS,
-    apps: state.apps.map((app) => ({
-      ...app,
-      // Surfaced so the admin can see at a glance why an app is missing from a
-      // well-known file, instead of discovering it via a device that will not
-      // verify.
-      readiness: {
-        aasa: isAasaReady(app),
-        assetlinks: isAssetlinksReady(app),
-      },
-      linkUrl: `https://${LINK_HOST}/t/${app.slug}`,
-    })),
-    legacyCodes: state.legacyCodes,
-  });
+router.get('/api/admin/config', requireToken, async (req, res, next) => {
+  try {
+    const state = await getState();
+    res.json({
+      linkHost: LINK_HOST,
+      portalUrl: state.portalUrl,
+      behaviors: BEHAVIORS,
+      platforms: PLATFORMS,
+      apps: state.apps.map((app) => ({
+        ...app,
+        // Surfaced so the admin can see at a glance why an app is missing from a
+        // well-known file, instead of discovering it via a device that will not
+        // verify.
+        readiness: {
+          aasa: isAasaReady(app),
+          assetlinks: isAssetlinksReady(app),
+        },
+        linkUrl: `https://${LINK_HOST}/t/${app.slug}`,
+      })),
+      legacyCodes: state.legacyCodes,
+    });
+  } catch (err) { next(err); }
 });
 
 /**
  * Live view of exactly what the two well-known files currently contain, plus
  * the AASA size against Apple's 128 KB hard limit.
  */
-router.get('/api/admin/wellknown', requireToken, (req, res) => {
-  const aasa = buildAasa();
-  const assetlinks = buildAssetlinks();
-  const aasaBytes = Buffer.byteLength(JSON.stringify(aasa), 'utf8');
+router.get('/api/admin/wellknown', requireToken, async (req, res, next) => {
+  try {
+    const apps = await getEnabledApps();
+    const aasa = buildAasa(apps);
+    const assetlinks = buildAssetlinks(apps);
+    const aasaBytes = Buffer.byteLength(JSON.stringify(aasa), 'utf8');
 
-  res.json({
-    aasa,
-    assetlinks,
-    aasaBytes,
-    aasaLimitBytes: 128 * 1024,
-    aasaWarnBytes: 100 * 1024,
-    // Apple's limit is on the served file. At ~170 bytes per minified entry
-    // this is nowhere near a problem at 2 apps, but the number is surfaced now
-    // so the 300-tenant migration inherits the check rather than discovering it.
-    aasaOverWarn: aasaBytes > 100 * 1024,
-  });
+    res.json({
+      aasa,
+      assetlinks,
+      aasaBytes,
+      aasaLimitBytes: 128 * 1024,
+      aasaWarnBytes: 100 * 1024,
+      // Apple's limit is on the served file. At ~170 bytes per minified entry
+      // this is nowhere near a problem at 2 apps, but the number is surfaced now
+      // so the 300-tenant migration inherits the check rather than discovering it.
+      aasaOverWarn: aasaBytes > 100 * 1024,
+    });
+  } catch (err) { next(err); }
 });
 
 /* ── Writes ───────────────────────────────────────────────────────────────── */
@@ -130,7 +136,7 @@ router.post('/api/admin/apps', requireToken, express.json(), async (req, res) =>
 
 router.put('/api/admin/apps/:slug', requireToken, express.json(), async (req, res) => {
   const slug = String(req.params.slug || '').toLowerCase();
-  if (!getApp(slug)) return res.status(404).json({ error: 'unknown app' });
+  if (!(await getApp(slug))) return res.status(404).json({ error: 'unknown app' });
 
   // The slug is the path prefix baked into shipped binaries. Changing it would
   // silently break every installed copy of the app, so it is taken from the URL
@@ -152,7 +158,7 @@ router.post(
   upload.single('icon'),
   async (req, res) => {
     const slug = String(req.params.slug || '').toLowerCase();
-    const app = getApp(slug);
+    const app = await getApp(slug);
     if (!app) return res.status(404).json({ error: 'unknown app' });
     if (!req.file) return res.status(400).json({ error: 'no file uploaded (field name: icon)' });
 
@@ -174,7 +180,7 @@ router.post(
 
 router.put('/api/admin/legacy/:code', requireToken, express.json(), async (req, res) => {
   const slug = String(req.body?.slug || '').toLowerCase();
-  if (!getApp(slug)) return res.status(400).json({ error: 'slug must reference a known app' });
+  if (!(await getApp(slug))) return res.status(400).json({ error: 'slug must reference a known app' });
 
   await setLegacyCode(req.params.code, {
     slug,

@@ -56,15 +56,17 @@ app.use(wellKnown);
 app.use(express.static(PUBLIC_DIR, { redirect: false, fallthrough: true }));
 app.use('/uploads', express.static(UPLOADS_DIR, { redirect: false, fallthrough: true }));
 
-app.get('/healthz', (req, res) => {
-  const apps = getEnabledApps();
-  res.json({
-    ok: true,
-    linkHost: LINK_HOST,
-    apps: apps.length,
-    aasaEntries: buildAasa(apps).applinks.details.length,
-    assetlinkStatements: buildAssetlinks(apps).length,
-  });
+app.get('/healthz', async (req, res, next) => {
+  try {
+    const apps = await getEnabledApps();
+    res.json({
+      ok: true,
+      linkHost: LINK_HOST,
+      apps: apps.length,
+      aasaEntries: buildAasa(apps).applinks.details.length,
+      assetlinkStatements: buildAssetlinks(apps).length,
+    });
+  } catch (err) { next(err); }
 });
 
 app.use(deeplinkApi);
@@ -107,8 +109,8 @@ app.use((err, req, res, next) => {
   });
 });
 
-app.listen(PORT, () => {
-  const apps = getEnabledApps();
+if (process.env.VERCEL !== '1') app.listen(PORT, async () => {
+  const apps = await getEnabledApps();
   console.log(`\nRunLoyal link service on :${PORT}`);
   console.log(`  public host   https://${LINK_HOST}`);
   console.log(`  config        ${APPS_FILE}`);

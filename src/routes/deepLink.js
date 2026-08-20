@@ -117,7 +117,7 @@ function renderInterstitial(res, ctx, status = 200) {
 router.get(['/t/:slug', '/t/:slug/*'], async (req, res, next) => {
   try {
     const slug = String(req.params.slug || '').toLowerCase();
-    const app = getApp(slug);
+    const app = await getApp(slug);
 
     if (!app || !app.enabled) {
       return res.status(404).render('not-found', {

@@ -38,34 +38,36 @@ const router = express.Router();
  * Token → link context. In production this reads a short-lived token table.
  * Here it parses the opaque `rl_<slug>_<path>` form minted by deepLink.js.
  */
-router.post('/api/deeplink/resolve', express.json(), (req, res) => {
-  const token = String(req.body?.token || '').trim();
-  if (!token) {
-    return res.status(400).json({ error: 'token is required' });
-  }
+router.post('/api/deeplink/resolve', express.json(), async (req, res, next) => {
+  try {
+    const token = String(req.body?.token || '').trim();
+    if (!token) {
+      return res.status(400).json({ error: 'token is required' });
+    }
 
-  const match = /^rl_([a-z0-9-]+)(?:_(.*))?$/i.exec(token);
-  if (!match) {
-    return res.status(404).json({ error: 'unknown token', token });
-  }
+    const match = /^rl_([a-z0-9-]+)(?:_(.*))?$/i.exec(token);
+    if (!match) {
+      return res.status(404).json({ error: 'unknown token', token });
+    }
 
-  const app = getApp(match[1]);
-  if (!app) {
-    return res.status(404).json({ error: 'unknown app for token', token });
-  }
+    const app = await getApp(match[1]);
+    if (!app) {
+      return res.status(404).json({ error: 'unknown app for token', token });
+    }
 
-  const path = (match[2] || '').replace(/_/g, '/');
+    const path = (match[2] || '').replace(/_/g, '/');
 
-  return res.json({
-    token,
-    slug: app.slug,
-    path: path || null,
-    // The pet-owner apps will expect a semantic target here rather than a raw
-    // path — action + resource key. Shape is fixed now, population comes later.
-    action: path ? path.split('/')[0] : null,
-    resourceKey: path ? path.split('/').slice(1).join('/') || null : null,
-    resolvedAt: new Date().toISOString(),
-  });
+    return res.json({
+      token,
+      slug: app.slug,
+      path: path || null,
+      // The pet-owner apps will expect a semantic target here rather than a raw
+      // path — action + resource key. Shape is fixed now, population comes later.
+      action: path ? path.split('/')[0] : null,
+      resourceKey: path ? path.split('/').slice(1).join('/') || null : null,
+      resolvedAt: new Date().toISOString(),
+    });
+  } catch (err) { next(err); }
 });
 
 /**

@@ -26,14 +26,14 @@ const router = express.Router();
 // turn every 404 for a missing file into a confusing redirect.
 const CODE_RE = /^[A-Za-z0-9_-]{1,24}$/;
 
-router.get('/:code', (req, res, next) => {
+router.get('/:code', async (req, res, next) => {
   const code = String(req.params.code || '');
   if (!CODE_RE.test(code)) return next();
 
-  const mapping = getLegacyCode(code);
+  const mapping = await getLegacyCode(code);
   if (!mapping) return next();
 
-  const app = getApp(mapping.slug);
+  const app = await getApp(mapping.slug);
   if (!app || !app.enabled) {
     return res.status(404).render('not-found', {
       slug: mapping.slug,

@@ -23,6 +23,12 @@ export const PORT = Number(process.env.PORT || 3000);
  */
 export const LINK_HOST = process.env.LINK_HOST || 'link-poc.example.com';
 
+export const SUPABASE_DB_HOST = process.env.SUPABASE_DB_HOST || '';
+export const SUPABASE_DB_PORT = Number(process.env.SUPABASE_DB_PORT || 5432);
+export const SUPABASE_DB_NAME = process.env.SUPABASE_DB_NAME || 'postgres';
+export const SUPABASE_DB_USER = process.env.SUPABASE_DB_USER || 'postgres';
+export const SUPABASE_DB_PASSWORD = process.env.SUPABASE_DB_PASSWORD || '';
+
 export const ADMIN_TOKEN = process.env.ADMIN_TOKEN || '';
 
 export const DATA_DIR = path.isAbsolute(process.env.DATA_DIR || '')

@@ -32,7 +32,7 @@ const pathPrefixFor = (app) => `/t/${app.slug}`;
  * installed app that claims this domain claims *every* path on it, and two
  * tenant apps on one device fight over which one opens.
  */
-export function buildAasa(apps = getEnabledApps()) {
+export function buildAasa(apps = []) {
   const details = apps.filter(isAasaReady).map((app) => ({
     appIDs: [`${app.ios.teamId}.${app.ios.bundleId}`],
     components: [
@@ -58,7 +58,7 @@ export function buildAasa(apps = getEnabledApps()) {
  * empty array — one malformed statement can invalidate the whole file and take
  * every other app on the domain down with it.
  */
-export function buildAssetlinks(apps = getEnabledApps()) {
+export function buildAssetlinks(apps = []) {
   return apps.filter(isAssetlinksReady).map((app) => ({
     relation: ['delegate_permission/common.handle_all_urls'],
     target: {
@@ -88,19 +88,19 @@ function sendJson(res, body) {
   res.end(payload);
 }
 
-router.get('/.well-known/apple-app-site-association', (req, res) => {
-  sendJson(res, buildAasa());
+router.get('/.well-known/apple-app-site-association', async (req, res, next) => {
+  try { sendJson(res, buildAasa(await getEnabledApps())); } catch (err) { next(err); }
 });
 
 // Some tooling and a few older docs probe the `.json` variant. Serving the same
 // body is correct; redirecting to the extensionless path would NOT be, because
 // a redirect on a well-known path is itself a failure.
-router.get('/.well-known/apple-app-site-association.json', (req, res) => {
-  sendJson(res, buildAasa());
+router.get('/.well-known/apple-app-site-association.json', async (req, res, next) => {
+  try { sendJson(res, buildAasa(await getEnabledApps())); } catch (err) { next(err); }
 });
 
-router.get('/.well-known/assetlinks.json', (req, res) => {
-  sendJson(res, buildAssetlinks());
+router.get('/.well-known/assetlinks.json', async (req, res, next) => {
+  try { sendJson(res, buildAssetlinks(await getEnabledApps())); } catch (err) { next(err); }
 });
 
 export default router;
