@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title><%= app.displayName %></title>
+
+<%#
+  Crawler response. Meta tags only, NEVER a redirect.
+
+  Slack, iMessage, WhatsApp and Facebook all cache what they scrape. A 302
+  served to a crawler gets that redirect cached against the link, and every
+  future preview of every link on this domain is wrong until the cache expires
+  — which for some of them is measured in weeks.
+%>
+<meta property="og:title" content="<%= app.displayName %>">
+<meta property="og:description" content="<%= app.tagline %>">
+<meta property="og:url" content="<%= canonicalUrl %>">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="<%= app.displayName %>">
+<% if (iconUrl) { %><meta property="og:image" content="<%= iconUrl %>"><% } %>
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="<%= app.displayName %>">
+<meta name="twitter:description" content="<%= app.tagline %>">
+<link rel="canonical" href="<%= canonicalUrl %>">
+</head>
+<body>
+<h1><%= app.displayName %></h1>
+<p><%= app.tagline %></p>
+<p><a href="<%= canonicalUrl %>"><%= canonicalUrl %></a></p>
+</body>
+</html>

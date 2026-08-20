@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title><%= app.displayName %></title>
+
+<meta property="og:title" content="<%= app.displayName %>">
+<meta property="og:description" content="<%= app.tagline %>">
+<meta property="og:url" content="<%= canonicalUrl %>">
+<meta property="og:type" content="website">
+<% if (iconUrl) { %><meta property="og:image" content="<%= iconUrl %>"><% } %>
+<meta name="twitter:card" content="summary">
+
+<%# Apple reads this as a hint for the Smart App Banner. Harmless when the
+    Universal Link already fired; useful in Safari when it did not. %>
+<% if (app.ios.appStoreId) { %>
+<meta name="apple-itunes-app" content="app-id=<%= app.ios.appStoreId %><%= deepLinkPath ? ', app-argument=' + canonicalUrl : '' %>">
+<% } %>
+
+<link rel="stylesheet" href="/interstitial.css">
+
+<%# Static hosting has no server, so platform detection and the redirect happen
+    in the browser. Inlined in <head> and run synchronously so a redirect never
+    shows a flash of this page first. %>
+<% if (typeof mode !== 'undefined' && mode === 'static') { %>
+<%- include('partials/boot', { clientConfig, canonicalUrl }) %>
+<% } %>
+</head>
+<body data-platform="<%= platform %>" data-os="<%= os %>">
+
+<%# In-app webviews do not honour Universal Links at all, so the escape hatch
+    is the only way a user in Instagram/Gmail can reach the app.
+    In static mode it is rendered hidden and revealed by the boot script — which
+    also means a no-JavaScript visitor never sees a banner that cannot help. %>
+<% if (isInAppWebview || (typeof mode !== 'undefined' && mode === 'static')) { %>
+<div class="webview-banner"<%= isInAppWebview ? '' : ' hidden' %>>
+  <span>For the best experience, open this page in your browser.</span>
+  <a class="webview-banner__action" href="<%= canonicalUrl %>" target="_blank" rel="noopener">Open in browser</a>
+</div>
+<% } %>
+
+<main class="stage">
+  <div class="card">
+
+    <section class="preview" aria-label="App preview">
+      <div class="phone">
+        <div class="phone__screen">
+          <div class="appicon">
+            <% if (iconUrl) { %>
+              <img src="<%= iconUrl %>" alt="" width="128" height="128">
+            <% } else { %>
+              <div class="appicon__placeholder" aria-hidden="true"><%= app.displayName.trim().charAt(0) %></div>
+            <% } %>
+          </div>
+          <p class="appname"><%= app.displayName %></p>
+        </div>
+      </div>
+    </section>
+
+    <section class="download">
+      <%# Two headings, one shown per breakpoint. The QR is hidden on mobile
+          (pointless on the device already displaying it), so "Scan to
+          download" would be instructing the reader to use something that is
+          not on screen. %>
+      <h1 class="download__title">
+        <span class="download__title--wide"><%= app.tagline %></span>
+        <span class="download__title--narrow">Download the app</span>
+      </h1>
+
+      <div class="qr" aria-label="QR code linking to this page">
+        <div class="qr__frame">
+          <% if (qr) { %><%- qr %><% } else { %>
+            <p class="qr__fallback"><%= canonicalUrl %></p>
+          <% } %>
+        </div>
+      </div>
+
+      <div class="divider"><span>OR</span></div>
+
+      <div class="badges">
+        <% if (appStoreUrl) { %>
+        <a class="badge<%= os === 'ios' ? ' badge--primary' : '' %>"
+           href="<%= appStoreUrl %>"
+           data-store="ios"
+           <%= probe.ios ? 'data-probe="' + probe.ios + '"' : '' %>>
+          <img src="/badges/app-store.svg" alt="Download on the App Store" height="54">
+        </a>
+        <% } %>
+
+        <% if (playStoreUrl) { %>
+        <%# On Android the href IS the intent URL when a probe is enabled:
+            Chrome opens the app if installed and follows browser_fallback_url
+            to Play if not. No JavaScript involved. %>
+        <a class="badge<%= os === 'android' ? ' badge--primary' : '' %>"
+           href="<%= probe.android || playStoreUrl %>"
+           data-store="android">
+          <img src="/badges/google-play.svg" alt="Get it on Google Play" height="54">
+        </a>
+        <% } %>
+      </div>
+
+      <% if (portalUrl) { %>
+      <p class="portal-link"><a href="<%= portalUrl %>">Continue in your browser</a></p>
+      <% } %>
+    </section>
+
+  </div>
+
+  <% if (forced) { %>
+  <p class="preview-note">Preview mode — behaviour forced to <strong><%= platform %></strong> (<%= behavior %>)</p>
+  <% } else if (typeof mode !== 'undefined' && mode === 'static') { %>
+  <p class="preview-note" hidden></p>
+  <% } %>
+</main>
+
+<% if (probe.ios) { %>
+<script>
+/*
+ * iOS-only fallback probe.
+ *
+ * This runs ONLY because the request reached the server, which means the
+ * Universal Link did not fire. Try the custom scheme; if the page is still
+ * visible shortly after, the app is not installed and we send the user to the
+ * App Store.
+ *
+ * Guarded on a real user gesture rather than firing on load: iOS shows an
+ * "Open in <app>?" system prompt for the scheme, and an unprompted one on page
+ * load reads as a hijack. The store link still works normally if JS is off.
+ */
+(function () {
+  var PROBE_MS = 1200;
+
+  document.querySelectorAll('a[data-probe]').forEach(function (el) {
+    el.addEventListener('click', function (ev) {
+      var target = el.getAttribute('data-probe');
+      var store = el.getAttribute('href');
+      if (!target) return;
+
+      ev.preventDefault();
+      var settled = false;
+
+      function settle() {
+        if (settled) return;
+        settled = true;
+        document.removeEventListener('visibilitychange', onHide);
+        window.removeEventListener('pagehide', onHide);
+      }
+
+      // If the app opened, the page is backgrounded before the timer fires.
+      function onHide() {
+        if (document.visibilityState === 'hidden') settle();
+      }
+
+      document.addEventListener('visibilitychange', onHide);
+      window.addEventListener('pagehide', onHide);
+
+      window.location.href = target;
+
+      setTimeout(function () {
+        if (settled) return;
+        settle();
+        window.location.href = store;
+      }, PROBE_MS);
+    });
+  });
+})();
+</script>
+<% } %>
+
+</body>
+</html>

@@ -1,0 +1,147 @@
+<script>
+/*
+ * Static-hosting boot script.
+ *
+ * On Firebase Hosting there is no server, so the platform detection and
+ * redirect decisions that deepLink.js makes per request happen here instead.
+ *
+ * Runs in <head>, synchronously, before the body paints — a redirect decided
+ * after first paint shows the user a flash of the download page they were never
+ * meant to see.
+ *
+ * Crawlers do not execute this at all, which is exactly right: they get the
+ * static HTML with its OG tags and are never redirected. A 302 served to a
+ * crawler gets cached by Slack/iMessage/WhatsApp and poisons the link preview
+ * for everyone.
+ */
+(function () {
+  var CFG = <%- JSON.stringify(clientConfig) %>;
+
+  var ua = (navigator.userAgent || '').toLowerCase();
+
+  // iPadOS 13+ reports a desktop Macintosh UA and there is no reliable way to
+  // tell it from a real Mac. Treating it as desktop is the safe outcome: it
+  // renders the page with a QR rather than redirecting to a store it may not
+  // have.
+  var isIos = /iphone|ipod/.test(ua) || (/ipad/.test(ua) && ua.indexOf('macintosh') === -1);
+  var isAndroid = ua.indexOf('android') !== -1;
+  var os = isIos ? 'ios' : isAndroid ? 'android' : 'desktop';
+
+  var WEBVIEW = ['fban', 'fbav', 'fb_iab', 'instagram', 'line/', 'micromessenger',
+                 'gmailapp', 'gsa/', 'twitter', 'linkedinapp', 'snapchat', 'tiktok'];
+  var isWebview = os !== 'desktop' &&
+    (WEBVIEW.some(function (p) { return ua.indexOf(p) !== -1; }) || /\bwv\b/.test(ua));
+
+  // Mirrors the server's ?forcePlatform= override so the admin preview and the
+  // deployed page cannot drift.
+  var forced = null;
+  try { forced = new URLSearchParams(location.search).get('forcePlatform'); } catch (e) {}
+  if (forced === 'ios' || forced === 'android') { os = forced; isWebview = false; }
+  else if (forced === 'desktop') { os = 'desktop'; isWebview = false; }
+  else if (forced === 'inAppWebview') { isWebview = true; }
+
+  var platform = isWebview ? 'inAppWebview' : os;
+
+  // Everything after /t/<slug>
+  var deepPath = location.pathname
+    .replace(/^\/t\/[^/]+/, '')
+    .replace(/^\/+/, '')
+    .replace(/\/+$/, '');
+
+  var canonical = location.origin + '/t/' + CFG.slug + (deepPath ? '/' + deepPath : '');
+
+  // Opaque Play Install Referrer token — no PII, no business data, since it is
+  // visible to anyone who inspects the URL.
+  var referrer = ('rl_' + CFG.slug + (deepPath ? '_' + deepPath.replace(/[^a-z0-9]+/gi, '_') : '')).slice(0, 96);
+
+  var appStore = CFG.appStoreId ? 'https://apps.apple.com/app/id' + CFG.appStoreId : null;
+  var play = CFG.packageName
+    ? 'https://play.google.com/store/apps/details?id=' + encodeURIComponent(CFG.packageName) +
+      '&referrer=' + encodeURIComponent(referrer)
+    : null;
+  var portal = CFG.portalUrl
+    ? CFG.portalUrl.replace(/\/+$/, '') + (deepPath ? '/' + deepPath : '')
+    : null;
+
+  // In-app webviews always get the page, because the "Open in browser" escape
+  // hatch is the only thing that helps there.
+  var behavior = isWebview ? 'interstitial' : (CFG.behavior[platform] || 'interstitial');
+  // There is no store to send a desktop browser to.
+  if (behavior === 'storeDirect' && os === 'desktop') behavior = 'interstitial';
+
+  // `replace`, not `assign` — otherwise Back returns here and immediately
+  // redirects again, trapping the user.
+  if (behavior === 'portal' && portal) { location.replace(portal); return; }
+  if (behavior === 'storeDirect') {
+    var direct = os === 'ios' ? appStore : os === 'android' ? play : null;
+    if (direct) { location.replace(direct); return; }
+  }
+
+  document.documentElement.setAttribute('data-platform', platform);
+  document.documentElement.setAttribute('data-os', os);
+
+  window.__RL = {
+    os: os, platform: platform, isWebview: isWebview, deepPath: deepPath,
+    canonical: canonical, appStore: appStore, play: play, portal: portal,
+    forced: !!forced, behavior: behavior
+  };
+
+  document.addEventListener('DOMContentLoaded', function () {
+    var d = window.__RL;
+    document.body.setAttribute('data-platform', d.platform);
+    document.body.setAttribute('data-os', d.os);
+
+    if (d.isWebview) {
+      var banner = document.querySelector('.webview-banner');
+      if (banner) {
+        banner.hidden = false;
+        var link = banner.querySelector('a');
+        if (link) link.href = d.canonical;
+      }
+    }
+
+    // Point the Play badge at the path-specific referrer and emphasise the
+    // badge for the platform the visitor is actually on.
+    var playBadge = document.querySelector('[data-store="android"]');
+    if (playBadge && d.play) playBadge.href = d.play;
+    var own = document.querySelector('[data-store="' + d.os + '"]');
+    if (own) own.classList.add('badge--primary');
+
+    var portalLink = document.querySelector('.portal-link a');
+    if (portalLink) {
+      if (d.portal) portalLink.href = d.portal;
+      else portalLink.parentNode.hidden = true;
+    }
+
+    if (d.forced) {
+      var note = document.querySelector('.preview-note');
+      if (note) {
+        note.hidden = false;
+        note.innerHTML = 'Preview mode — behaviour forced to <strong>' + d.platform +
+          '</strong> (' + d.behavior + ')';
+      }
+    }
+
+    // The baked QR encodes the app's base link, which is correct for most
+    // visits and works with JavaScript disabled. Only redraw it when the URL
+    // actually differs, so the encoder is downloaded only when it is needed —
+    // and never on mobile, where the QR is hidden anyway.
+    if (d.deepPath && d.canonical !== <%- JSON.stringify(canonicalUrl) %> &&
+        window.matchMedia('(min-width: 861px)').matches) {
+      var s = document.createElement('script');
+      s.src = '/qr.js';
+      s.onload = function () {
+        window.RLQR(d.canonical).then(function (svg) {
+          var frame = document.querySelector('.qr__frame');
+          if (frame) {
+            frame.innerHTML = svg
+              .replace(/\s(width|height)="[^"]*"/g, '')
+              .replace('<svg', '<svg preserveAspectRatio="xMidYMid meet" aria-hidden="true"');
+          }
+        }).catch(function () {});
+      };
+      document.head.appendChild(s);
+    }
+  });
+})();
+</script>

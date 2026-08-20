@@ -1,0 +1,66 @@
+{
+  "portalUrl": "https://portal.runloyal.com",
+  "apps": [
+    {
+      "slug": "kennel",
+      "displayName": "StaffApp Plus For Kennels",
+      "tagline": "Scan to download the app",
+      "enabled": true,
+      "iconPath": "/uploads/kennel-89c6f49f626d.png",
+      "ios": {
+        "bundleId": "com.itrustkennel.staffapp.plus.kennel",
+        "teamId": "E8Q47GVS49",
+        "appStoreId": "6768926257",
+        "scheme": "runloyalkennel"
+      },
+      "android": {
+        "packageName": "com.itrustkennel.staffapp.plus.kennel",
+        "sha256CertFingerprints": [
+          "E5:9A:3A:70:25:6B:F8:A8:55:25:3C:8E:0A:7B:E1:C9:17:B1:3B:01:88:EE:BB:E6:DA:A0:BE:C7:CC:9D:DD:1A",
+          "96:ED:99:1E:67:24:D8:63:AE:AF:82:F3:6A:76:27:09:C8:CC:86:F3:0D:7D:28:56:C8:38:8E:F7:C6:63:B4:57"
+        ]
+      },
+      "behavior": {
+        "ios": "storeDirect",
+        "android": "storeDirect",
+        "desktop": "interstitial"
+      },
+      "openAppIfInstalled": false,
+      "portalUrlOverride": null
+    },
+    {
+      "slug": "groomers",
+      "displayName": "StaffApp Plus For Groomers",
+      "tagline": "Scan to download the app",
+      "enabled": true,
+      "iconPath": "/uploads/groomers-bc36f19a9482.png",
+      "ios": {
+        "bundleId": "com.itrustkennel.staffapp.plus",
+        "teamId": "E8Q47GVS49",
+        "appStoreId": "6743940191",
+        "scheme": "runloyalgroomers"
+      },
+      "android": {
+        "packageName": "com.itrustkennel.staffapp.plus",
+        "sha256CertFingerprints": [
+          "71:A1:3B:9C:8D:64:41:2E:AD:02:D8:87:5D:7C:95:FD:12:43:96:7F:B5:4B:C9:90:E9:5E:E9:48:51:18:38:6A",
+          "96:ED:99:1E:67:24:D8:63:AE:AF:82:F3:6A:76:27:09:C8:CC:86:F3:0D:7D:28:56:C8:38:8E:F7:C6:63:B4:57"
+        ]
+      },
+      "behavior": {
+        "ios": "storeDirect",
+        "android": "storeDirect",
+        "desktop": "interstitial"
+      },
+      "openAppIfInstalled": false,
+      "portalUrlOverride": null
+    }
+  ],
+  "legacyCodes": {
+    "app": {
+      "slug": "kennel",
+      "path": "",
+      "note": "Seeded from the current Branch link staffappforkennel.app.link/app"
+    }
+  }
+}
