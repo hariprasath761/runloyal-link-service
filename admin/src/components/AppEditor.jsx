@@ -76,7 +76,12 @@ export default function AppEditor({ app, onSaved, onError }) {
   async function save() {
     setBusy(true);
     try {
-      await api.updateApp(app.slug, draft);
+      // iconPath can be a large base64 data URI. It is already stored in
+      // Supabase through the dedicated icon endpoint and must not be echoed
+      // back inside every JSON update. API-only readiness/link fields are also
+      // excluded from the editable payload.
+      const { iconPath, readiness, linkUrl, ...editable } = draft;
+      await api.updateApp(app.slug, editable);
       setSaved(true);
       onError('');
       await onSaved();

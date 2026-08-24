@@ -26,6 +26,9 @@ import {
  */
 
 const router = express.Router();
+const authJson = express.json({ limit: '16kb' });
+const appJson = express.json({ limit: '1mb' });
+const legacyJson = express.json({ limit: '32kb' });
 
 /* ── Auth ─────────────────────────────────────────────────────────────────── */
 
@@ -41,7 +44,7 @@ async function requireAdmin(req, res, next) {
   }
 }
 
-router.post('/api/admin/auth/login', express.json(), async (req, res, next) => {
+router.post('/api/admin/auth/login', authJson, async (req, res, next) => {
   try {
     res.set('Cache-Control', 'no-store');
     res.json(await loginAdmin(req.body?.email, req.body?.password));
@@ -51,7 +54,7 @@ router.post('/api/admin/auth/login', express.json(), async (req, res, next) => {
   }
 });
 
-router.post('/api/admin/auth/refresh', express.json(), async (req, res, next) => {
+router.post('/api/admin/auth/refresh', authJson, async (req, res, next) => {
   try {
     res.set('Cache-Control', 'no-store');
     res.json(await refreshAdmin(req.body?.refreshToken));
@@ -133,20 +136,28 @@ router.get('/api/admin/wellknown', requireAdmin, async (req, res, next) => {
 
 /* ── Writes ───────────────────────────────────────────────────────────────── */
 
-router.post('/api/admin/apps', requireAdmin, express.json(), async (req, res) => {
-  const result = await upsertApp(req.body, { isNew: true });
+router.post('/api/admin/apps', requireAdmin, appJson, async (req, res) => {
+  // Icons have a dedicated bounded multipart endpoint and cannot be injected
+  // through app JSON.
+  const { iconPath, readiness, linkUrl, ...input } = req.body || {};
+  const result = await upsertApp({ ...input, iconPath: null }, { isNew: true });
   if (!result.ok) return res.status(400).json({ errors: result.errors });
   res.status(201).json(result.value);
 });
 
-router.put('/api/admin/apps/:slug', requireAdmin, express.json(), async (req, res) => {
+router.put('/api/admin/apps/:slug', requireAdmin, appJson, async (req, res) => {
   const slug = String(req.params.slug || '').toLowerCase();
-  if (!(await getApp(slug))) return res.status(404).json({ error: 'unknown app' });
+  const existing = await getApp(slug);
+  if (!existing) return res.status(404).json({ error: 'unknown app' });
 
   // The slug is the path prefix baked into shipped binaries. Changing it would
   // silently break every installed copy of the app, so it is taken from the URL
   // and any slug in the body is ignored.
-  const result = await upsertApp({ ...req.body, slug }, { isNew: false });
+  const { iconPath, readiness, linkUrl, ...input } = req.body || {};
+  const result = await upsertApp(
+    { ...input, slug, iconPath: existing.iconPath },
+    { isNew: false },
+  );
   if (!result.ok) return res.status(400).json({ errors: result.errors });
   res.json(result.value);
 });
@@ -176,7 +187,7 @@ router.post(
   },
 );
 
-router.put('/api/admin/legacy/:code', requireAdmin, express.json(), async (req, res) => {
+router.put('/api/admin/legacy/:code', requireAdmin, legacyJson, async (req, res) => {
   const slug = String(req.body?.slug || '').toLowerCase();
   if (!(await getApp(slug))) return res.status(400).json({ error: 'slug must reference a known app' });
 
@@ -197,6 +208,9 @@ router.delete('/api/admin/legacy/:code', requireAdmin, async (req, res) => {
 /* ── Multer error shaping ─────────────────────────────────────────────────── */
 
 router.use((err, req, res, next) => {
+  if (err?.type === 'entity.too.large') {
+    return res.status(413).json({ error: 'request payload is too large' });
+  }
   if (err instanceof multer.MulterError) {
     const message =
       err.code === 'LIMIT_FILE_SIZE' ? 'icon must be 512 KB or smaller' : err.message;

@@ -175,6 +175,26 @@ try {
   assert.deepEqual(published.behavior, { ios: 'storeDirect', android: 'storeDirect' });
   console.log('  \x1b[32m✓\x1b[0m publishing is ready-only, immutable, and fixes mobile store fallback');
 
+  // Older cached admin bundles echoed the base64 icon into PUT JSON. Keep
+  // those saves working during deployment while refusing to mutate the icon
+  // outside its dedicated upload endpoint.
+  const largeIcon = `data:image/png;base64,${'A'.repeat(120 * 1024)}`;
+  appRows[0].icon_path = largeIcon;
+  const configWithIcon = await fetch(`${origin}/api/admin/config`, { headers: auth }).then((response) => response.json());
+  assert.ok(JSON.stringify(configWithIcon.apps[0]).length > 100 * 1024);
+  const legacySizedSave = await jsonRequest('PUT', '/api/admin/apps/draft-one', configWithIcon.apps[0]);
+  assert.equal(legacySizedSave.status, 200);
+  assert.equal(appRows[0].icon_path, largeIcon);
+  console.log('  \x1b[32m✓\x1b[0m large stored icons are not resent or overwritten by app JSON saves');
+
+  const tooLarge = await jsonRequest('PUT', '/api/admin/apps/draft-one', {
+    ...published,
+    tagline: 'x'.repeat(1024 * 1024),
+  });
+  assert.equal(tooLarge.status, 413);
+  assert.deepEqual(await tooLarge.json(), { error: 'request payload is too large' });
+  console.log('  \x1b[32m✓\x1b[0m oversized JSON receives a clean 413 response');
+
   const desktop = await fetch(`${origin}/app/draft-one/appointment/123`, {
     headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)' }, redirect: 'manual',
   });
@@ -220,7 +240,7 @@ try {
   assert.equal(assetlinks[0].target.package_name, 'com.runloyal.draft.one');
   console.log('  \x1b[32m✓\x1b[0m API readiness and OS association paths use /app');
 
-  console.log('\n\x1b[32mAll 10 passed\x1b[0m\n');
+  console.log('\n\x1b[32mAll 12 passed\x1b[0m\n');
 } finally {
   await new Promise((resolve) => server.close(resolve));
   await new Promise((resolve) => authServer.close(resolve));
