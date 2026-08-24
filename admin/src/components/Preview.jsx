@@ -3,7 +3,7 @@ import { useState } from 'react';
 /**
  * Live preview of the real interstitial.
  *
- * The iframe hits the actual `/t/:slug` route with `?forcePlatform=`, which
+ * The iframe hits the actual `/app/:slug` route with `?forcePlatform=`, which
  * drives the same code path production traffic takes. That is deliberate: a
  * preview that rendered its own approximation of the page would drift from the
  * real one exactly when it mattered.
@@ -23,8 +23,15 @@ export default function Preview({ app, linkHost }) {
 
   const active = VIEWS.find((v) => v.key === view);
   const suffix = path.replace(/^\/+/, '');
-  const src = `/t/${app.slug}${suffix ? `/${suffix}` : ''}?forcePlatform=${view}`;
-  const publicUrl = `https://${linkHost}/t/${app.slug}${suffix ? `/${suffix}` : ''}`;
+  const src = `/app/${app.slug}${suffix ? `/${suffix}` : ''}?forcePlatform=${view}`;
+  const publicUrl = `https://${linkHost}/app/${app.slug}${suffix ? `/${suffix}` : ''}`;
+  const behavior = view === 'desktop'
+    ? app.web.redirectDesktop && app.web.url ? 'web redirect' : 'interstitial'
+    : view === 'ios'
+      ? 'App Store fallback'
+      : view === 'android'
+        ? 'Play Store fallback'
+        : 'interstitial';
 
   return (
     <section className="panel">
@@ -58,8 +65,13 @@ export default function Preview({ app, linkHost }) {
           ? 'Crawlers always get meta tags and never a redirect — a 302 here gets cached by Slack, iMessage and WhatsApp, and every link preview on the domain stays broken until it expires.'
           : view === 'inAppWebview'
             ? 'In-app webviews always get the download page plus an “Open in browser” escape hatch, because Universal Links do not fire inside them at all.'
-            : `Behaviour: ${app.behavior[view]}. A redirect will navigate the frame below rather than render.`}
+            : `Behaviour: ${behavior}. ${app.web.showLink && app.web.url ? `Landing pages include a web link to ${app.web.url}. ` : ''}A redirect will navigate the frame below rather than render.`}
       </p>
+      {app.nativeDeepLinkEnabled ? (
+        <p className="note">
+          On a compatible installed app, a qualifying OS link opens natively before this page or preview loads.
+        </p>
+      ) : null}
 
       <div className="previewframe" style={{ maxWidth: active.width }}>
         <iframe key={src} src={src} title="Interstitial preview" />

@@ -250,12 +250,12 @@ body {
   opacity: 1;
 }
 
-.portal-link {
+.web-link {
   margin: 0;
   font-size: 14px;
 }
 
-.portal-link a {
+.web-link a {
   color: var(--ink-muted);
   text-decoration: underline;
 }

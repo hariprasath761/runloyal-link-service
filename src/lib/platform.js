@@ -80,8 +80,7 @@ function isCrawler(ua) {
 function isIos(ua) {
   // iPadOS 13+ reports a desktop Macintosh UA. There is no reliable
   // server-side way to tell that iPad from a real Mac, so it is treated as
-  // desktop — which is the safe outcome: it renders the interstitial with a QR
-  // instead of firing a scheme probe that would do nothing.
+  // desktop — which is the safe outcome: it renders the interstitial with a QR.
   return /iphone|ipod/.test(ua) || (/ipad/.test(ua) && !/macintosh/.test(ua));
 }
 
@@ -94,8 +93,7 @@ const isInAppWebview = (ua) =>
  * Classifies a request.
  *
  * Returns both the routing bucket and the underlying OS, because an in-app
- * webview still needs to know which store badge to emphasise and which scheme
- * to probe.
+ * webview still needs to know which store badge to emphasise.
  *
  * @returns {{ platform: string, os: 'ios'|'android'|'desktop', forced: boolean }}
  */
@@ -106,7 +104,7 @@ export function detectPlatform(req) {
 
   // Admin preview drives the same code path as production so the preview
   // cannot drift from real behavior. Only the bucket is forced; the OS follows
-  // it so store badges and probe schemes stay consistent.
+  // it so store badges stay consistent.
   const forceRaw = String(req.query?.forcePlatform || '').trim();
   if (forceRaw) {
     const forced = Object.values(PLATFORM).find((p) => p.toLowerCase() === forceRaw.toLowerCase());
@@ -126,7 +124,7 @@ export function detectPlatform(req) {
 }
 
 /**
- * Resolves the configured behavior for a classified request.
+ * Resolves behavior for a classified request.
  *
  * `crawler` and `inAppWebview` are not configurable — see the note in
  * store/schema.js for why.
@@ -135,13 +133,12 @@ export function resolveBehavior(app, platform) {
   if (platform === PLATFORM.CRAWLER) return 'meta';
   if (platform === PLATFORM.IN_APP_WEBVIEW) return 'interstitial';
 
-  const configured = app?.behavior?.[platform];
-  if (configured === 'portal') return 'portal';
-  if (configured === 'storeDirect') {
-    // There is no store to send a desktop browser to. Falling back to the
-    // interstitial (which shows the QR) is the only sensible reading of
-    // "storeDirect" on desktop.
-    return platform === PLATFORM.DESKTOP ? 'interstitial' : 'storeDirect';
+  if (platform === PLATFORM.DESKTOP) {
+    return app?.web?.redirectDesktop && app?.web?.url ? 'portal' : 'interstitial';
   }
-  return 'interstitial';
+
+  // If an OS association was enabled and the compatible app was installed, the
+  // OS opened it before this HTTP request existed. Reaching us on mobile means
+  // the app is unavailable, so the deterministic fallback is the app store.
+  return 'storeDirect';
 }

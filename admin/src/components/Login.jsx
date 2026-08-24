@@ -3,7 +3,8 @@ import { useState } from 'react';
 import * as api from '../api.js';
 
 export default function Login({ onAuthed }) {
-  const [token, setTokenValue] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -11,14 +12,11 @@ export default function Login({ onAuthed }) {
     ev.preventDefault();
     setBusy(true);
     setError('');
-    api.setToken(token.trim());
     try {
-      // Verify against a real endpoint rather than storing blindly — otherwise
-      // a wrong token looks accepted until the first save fails.
-      await api.fetchConfig();
+      await api.login(email.trim(), password);
       onAuthed();
     } catch (err) {
-      api.clearToken();
+      api.clearSession();
       setError(err.message);
     } finally {
       setBusy(false);
@@ -29,17 +27,25 @@ export default function Login({ onAuthed }) {
     <div className="login">
       <form className="login__card" onSubmit={submit}>
         <h1>Link Service Admin</h1>
-        <p className="muted">Enter the ADMIN_TOKEN from the server&rsquo;s .env file.</p>
+        <p className="muted">Sign in with your authorized admin account.</p>
+        <input
+          type="email"
+          value={email}
+          autoFocus
+          autoComplete="username"
+          placeholder="Email"
+          onChange={(e) => setEmail(e.target.value)}
+        />
         <input
           type="password"
-          value={token}
-          autoFocus
-          placeholder="ADMIN_TOKEN"
-          onChange={(e) => setTokenValue(e.target.value)}
+          value={password}
+          autoComplete="current-password"
+          placeholder="Password"
+          onChange={(e) => setPassword(e.target.value)}
         />
         {error ? <p className="error">{error}</p> : null}
-        <button className="btn btn--primary" disabled={busy || !token.trim()}>
-          {busy ? 'Checking…' : 'Sign in'}
+        <button className="btn btn--primary" disabled={busy || !email.trim() || !password}>
+          {busy ? 'Signing in…' : 'Sign in'}
         </button>
       </form>
     </div>

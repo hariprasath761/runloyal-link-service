@@ -158,8 +158,8 @@ On-device verification (cannot be done from CI):
   Android — must print "verified"
     adb shell pm get-app-links <package>
     adb shell pm verify-app-links --re-verify <package>
-    adb shell am start -a android.intent.action.VIEW -d "$HOST_URL/t/kennel/home"
+    adb shell am start -a android.intent.action.VIEW -d "$HOST_URL/app/kennel/home"
 
   iOS — the simulator does not exercise the real AASA path; confirm on a device
-    xcrun simctl openurl booted "$HOST_URL/t/kennel/home"
+    xcrun simctl openurl booted "$HOST_URL/app/kennel/home"
 EOF

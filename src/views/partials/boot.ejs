@@ -15,7 +15,10 @@
  * for everyone.
  */
 (function () {
-  var CFG = <%- JSON.stringify(clientConfig) %>;
+  var CFG = <%- JSON.stringify(clientConfig)
+    .replace(/</g, '\\u003c')
+    .replace(/>/g, '\\u003e')
+    .replace(/&/g, '\\u0026') %>;
 
   var ua = (navigator.userAgent || '').toLowerCase();
 
@@ -42,13 +45,13 @@
 
   var platform = isWebview ? 'inAppWebview' : os;
 
-  // Everything after /t/<slug>
+  // Everything after /app/<slug>. The old /t form remains readable during rollout.
   var deepPath = location.pathname
-    .replace(/^\/t\/[^/]+/, '')
+    .replace(/^\/(?:app|t)\/[^/]+/, '')
     .replace(/^\/+/, '')
     .replace(/\/+$/, '');
 
-  var canonical = location.origin + '/t/' + CFG.slug + (deepPath ? '/' + deepPath : '');
+  var canonical = location.origin + '/app/' + CFG.slug + (deepPath ? '/' + deepPath : '');
 
   // Opaque Play Install Referrer token — no PII, no business data, since it is
   // visible to anyone who inspects the URL.
@@ -59,19 +62,20 @@
     ? 'https://play.google.com/store/apps/details?id=' + encodeURIComponent(CFG.packageName) +
       '&referrer=' + encodeURIComponent(referrer)
     : null;
-  var portal = CFG.portalUrl
-    ? CFG.portalUrl.replace(/\/+$/, '') + (deepPath ? '/' + deepPath : '')
-    : null;
+  // The website owns its own route. Universal-link paths are not appended.
+  var webUrl = CFG.web.url || null;
 
   // In-app webviews always get the page, because the "Open in browser" escape
   // hatch is the only thing that helps there.
-  var behavior = isWebview ? 'interstitial' : (CFG.behavior[platform] || 'interstitial');
-  // There is no store to send a desktop browser to.
-  if (behavior === 'storeDirect' && os === 'desktop') behavior = 'interstitial';
+  var behavior = isWebview
+    ? 'interstitial'
+    : os === 'desktop'
+      ? (CFG.web.redirectDesktop && webUrl ? 'portal' : 'interstitial')
+      : 'storeDirect';
 
   // `replace`, not `assign` — otherwise Back returns here and immediately
   // redirects again, trapping the user.
-  if (behavior === 'portal' && portal) { location.replace(portal); return; }
+  if (behavior === 'portal' && webUrl) { location.replace(webUrl); return; }
   if (behavior === 'storeDirect') {
     var direct = os === 'ios' ? appStore : os === 'android' ? play : null;
     if (direct) { location.replace(direct); return; }
@@ -82,7 +86,7 @@
 
   window.__RL = {
     os: os, platform: platform, isWebview: isWebview, deepPath: deepPath,
-    canonical: canonical, appStore: appStore, play: play, portal: portal,
+    canonical: canonical, appStore: appStore, play: play, webUrl: webUrl,
     forced: !!forced, behavior: behavior
   };
 
@@ -106,12 +110,6 @@
     if (playBadge && d.play) playBadge.href = d.play;
     var own = document.querySelector('[data-store="' + d.os + '"]');
     if (own) own.classList.add('badge--primary');
-
-    var portalLink = document.querySelector('.portal-link a');
-    if (portalLink) {
-      if (d.portal) portalLink.href = d.portal;
-      else portalLink.parentNode.hidden = true;
-    }
 
     if (d.forced) {
       var note = document.querySelector('.preview-note');

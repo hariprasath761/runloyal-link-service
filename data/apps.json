@@ -1,5 +1,4 @@
 {
-  "portalUrl": "https://portal.runloyal.com",
   "apps": [
     {
       "slug": "kennel",
@@ -10,8 +9,7 @@
       "ios": {
         "bundleId": "com.itrustkennel.staffapp.plus.kennel",
         "teamId": "E8Q47GVS49",
-        "appStoreId": "6768926257",
-        "scheme": "runloyalkennel"
+        "appStoreId": "6768926257"
       },
       "android": {
         "packageName": "com.itrustkennel.staffapp.plus.kennel",
@@ -22,11 +20,14 @@
       },
       "behavior": {
         "ios": "storeDirect",
-        "android": "storeDirect",
-        "desktop": "interstitial"
+        "android": "storeDirect"
       },
-      "openAppIfInstalled": false,
-      "portalUrlOverride": null
+      "nativeDeepLinkEnabled": false,
+      "web": {
+        "url": null,
+        "showLink": false,
+        "redirectDesktop": false
+      }
     },
     {
       "slug": "groomers",
@@ -37,8 +38,7 @@
       "ios": {
         "bundleId": "com.itrustkennel.staffapp.plus",
         "teamId": "E8Q47GVS49",
-        "appStoreId": "6743940191",
-        "scheme": "runloyalgroomers"
+        "appStoreId": "6743940191"
       },
       "android": {
         "packageName": "com.itrustkennel.staffapp.plus",
@@ -49,11 +49,14 @@
       },
       "behavior": {
         "ios": "storeDirect",
-        "android": "storeDirect",
-        "desktop": "interstitial"
+        "android": "storeDirect"
       },
-      "openAppIfInstalled": false,
-      "portalUrlOverride": null
+      "nativeDeepLinkEnabled": false,
+      "web": {
+        "url": null,
+        "showLink": false,
+        "redirectDesktop": false
+      }
     }
   ],
   "legacyCodes": {

@@ -29,7 +29,9 @@ export const SUPABASE_DB_NAME = process.env.SUPABASE_DB_NAME || 'postgres';
 export const SUPABASE_DB_USER = process.env.SUPABASE_DB_USER || 'postgres';
 export const SUPABASE_DB_PASSWORD = process.env.SUPABASE_DB_PASSWORD || '';
 
-export const ADMIN_TOKEN = process.env.ADMIN_TOKEN || '';
+export const SUPABASE_URL = process.env.SUPABASE_URL || '';
+export const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || '';
+export const ADMIN_EMAILS = process.env.ADMIN_EMAILS || '';
 
 export const DATA_DIR = path.isAbsolute(process.env.DATA_DIR || '')
   ? process.env.DATA_DIR

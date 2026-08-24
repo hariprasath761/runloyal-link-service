@@ -4,17 +4,15 @@ import { publicBaseUrl } from '../config.js';
 import { qrSvg } from '../lib/qr.js';
 import { PLATFORM, detectPlatform, resolveBehavior } from '../lib/platform.js';
 import {
-  androidIntentUrl,
   appStoreUrl,
-  customSchemeUrl,
   playStoreUrl,
-  portalUrl,
   storeUrlForOs,
+  webUrl,
 } from '../lib/storeUrls.js';
 import { getApp } from '../store/appsRepository.js';
 
 /**
- * `GET /t/:slug/*` — the link itself.
+ * `GET /app/:slug/*` — the canonical link itself.
  *
  * ## When this handler does NOT run
  *
@@ -30,15 +28,16 @@ import { getApp } from '../store/appsRepository.js';
  *     after the user once chose "open in Safari" (which latches a per-domain
  *     declined flag until they long-press and pick Open in App).
  *
- * That is why the scheme probe below is a fallback and not the mechanism.
+ * This route never attempts a browser-level app launch. Native opening is
+ * controlled solely by the two OS association files.
  */
 
 const router = express.Router();
 
-/** The path after `/t/<slug>`, e.g. `appointment/9d7e4f2a`. */
+/** The path after `/app/<slug>`, e.g. `appointment/9d7e4f2a`. */
 function deepLinkPathFrom(req, slug) {
   const full = req.path.replace(/^\/+/, '');
-  const prefix = `t/${slug}`;
+  const prefix = `app/${slug}`;
   const rest = full.startsWith(prefix) ? full.slice(prefix.length) : '';
   return rest.replace(/^\/+/, '');
 }
@@ -46,7 +45,7 @@ function deepLinkPathFrom(req, slug) {
 /** Absolute canonical URL for this link — what the QR encodes. */
 function canonicalUrl(slug, deepLinkPath) {
   const suffix = deepLinkPath ? `/${deepLinkPath}` : '';
-  return `${publicBaseUrl()}/t/${slug}${suffix}`;
+  return `${publicBaseUrl()}/app/${slug}${suffix}`;
 }
 
 /**
@@ -71,15 +70,7 @@ export async function buildLinkContext(req, app, deepLinkPath) {
 
   const ios = appStoreUrl(app);
   const android = playStoreUrl(app, { referrer });
-  const portal = portalUrl(app, { deepLinkPath });
-
-  // Android's intent URL falls back to the Play Store by itself. iOS gets a
-  // scheme probe with a timer because it has no equivalent primitive.
-  const intent = androidIntentUrl(app, {
-    deepLinkPath,
-    fallbackUrl: android || portal || canonical,
-  });
-  const scheme = customSchemeUrl(app, { deepLinkPath });
+  const web = webUrl(app);
 
   return {
     app,
@@ -92,13 +83,8 @@ export async function buildLinkContext(req, app, deepLinkPath) {
     storeUrl: storeUrlForOs(app, os, { referrer }),
     appStoreUrl: ios,
     playStoreUrl: android,
-    portalUrl: portal,
-    intentUrl: intent,
-    schemeUrl: scheme,
-    // Only probe when the operator asked for it AND we have something to probe.
-    probe: app.openAppIfInstalled
-      ? { ios: os === PLATFORM.IOS ? scheme : null, android: os === PLATFORM.ANDROID ? intent : null }
-      : { ios: null, android: null },
+    webUrl: web,
+    showWebLink: app.web.showLink,
     qr: await qrSvg(canonical),
     iconUrl: app.iconPath || null,
     isInAppWebview: platform === PLATFORM.IN_APP_WEBVIEW,
@@ -111,10 +97,10 @@ function renderInterstitial(res, ctx, status = 200) {
 }
 
 // Two explicit paths rather than one wildcard: Express 4's `*` does not match
-// an empty segment, so `/t/kennel` (no action) would 404 under `/t/:slug/*`
-// alone. `/t/kennel` is a legitimate link — it is the plain "download the app"
+// an empty segment, so `/app/kennel` (no action) would 404 under `/app/:slug/*`
+// alone. `/app/kennel` is a legitimate link — it is the plain "download the app"
 // case, which is exactly what the current Branch link does.
-router.get(['/t/:slug', '/t/:slug/*'], async (req, res, next) => {
+router.get(['/app/:slug', '/app/:slug/*'], async (req, res, next) => {
   try {
     const slug = String(req.params.slug || '').toLowerCase();
     const app = await getApp(slug);
@@ -136,18 +122,12 @@ router.get(['/t/:slug', '/t/:slug/*'], async (req, res, next) => {
     }
 
     if (ctx.behavior === 'portal') {
-      if (ctx.portalUrl) return res.redirect(302, ctx.portalUrl);
-      // Configured for portal but no URL set — render rather than 500.
+      if (ctx.webUrl) return res.redirect(302, ctx.webUrl);
+      // Defensive fallback for legacy data that predates web URL validation.
       return renderInterstitial(res, ctx);
     }
 
     if (ctx.behavior === 'storeDirect') {
-      // With openAppIfInstalled on, Android still goes through the intent URL:
-      // Chrome opens the app when present and follows browser_fallback_url to
-      // Play when it is not. Strictly better than redirecting straight to Play.
-      if (ctx.os === PLATFORM.ANDROID && app.openAppIfInstalled && ctx.intentUrl) {
-        return res.redirect(302, ctx.intentUrl);
-      }
       if (ctx.storeUrl) return res.redirect(302, ctx.storeUrl);
       return renderInterstitial(res, ctx);
     }
@@ -156,6 +136,13 @@ router.get(['/t/:slug', '/t/:slug/*'], async (req, res, next) => {
   } catch (err) {
     next(err);
   }
+});
+
+// Old links remain safe during rollout, but `/app/...` is the only canonical
+// route advertised to new releases and association files.
+router.get(['/t/:slug', '/t/:slug/*'], (req, res) => {
+  const suffix = req.originalUrl.replace(/^\/t\//, '/app/');
+  res.redirect(302, suffix);
 });
 
 export default router;

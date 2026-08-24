@@ -4,13 +4,15 @@ import express from 'express';
 
 import {
   ADMIN_DIST_DIR,
-  ADMIN_TOKEN,
+  ADMIN_EMAILS,
   APPS_FILE,
   LINK_HOST,
   PORT,
   PUBLIC_DIR,
   UPLOADS_DIR,
   VIEWS_DIR,
+  SUPABASE_ANON_KEY,
+  SUPABASE_URL,
 } from './config.js';
 import adminApi from './routes/adminApi.js';
 import deepLink from './routes/deepLink.js';
@@ -90,9 +92,9 @@ if (fs.existsSync(ADMIN_DIST_DIR)) {
 
 app.use(deepLink);
 
-// Root: no tenant context, so there is nothing to route to.
+// Vercel and local deployments open directly into the administration portal.
 app.get('/', (req, res) => {
-  res.status(200).type('text/plain').send('RunLoyal link service');
+  res.redirect(302, '/admin');
 });
 
 app.use(legacy);
@@ -103,6 +105,9 @@ app.use((req, res) => {
 
 app.use((err, req, res, next) => {
   console.error('[server] unhandled error', err);
+  if (req.path.startsWith('/api/')) {
+    return res.status(500).json({ error: 'Backend configuration or database error' });
+  }
   res.status(500).render('not-found', {
     slug: '',
     reason: 'Something went wrong resolving this link.',
@@ -117,8 +122,8 @@ if (process.env.VERCEL !== '1') app.listen(PORT, async () => {
   console.log(`  apps          ${apps.map((a) => a.slug).join(', ') || '(none)'}`);
   console.log(`  AASA entries  ${buildAasa(apps).applinks.details.length}`);
   console.log(`  assetlinks    ${buildAssetlinks(apps).length}`);
-  if (!ADMIN_TOKEN) {
-    console.log('  ⚠ ADMIN_TOKEN is unset — the admin API will refuse every request');
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY || !ADMIN_EMAILS) {
+    console.log('  ⚠ Supabase Auth or ADMIN_EMAILS is unset — admin email login is disabled');
   }
   if (LINK_HOST.includes('example.com')) {
     console.log('  ⚠ LINK_HOST is still the placeholder — set it before building the apps');

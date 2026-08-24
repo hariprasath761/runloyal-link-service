@@ -3,20 +3,14 @@ import { useRef, useState } from 'react';
 import * as api from '../api.js';
 
 /**
- * Per-app editor: identity, the behavior matrix, and icon upload.
+ * Per-app editor: identity, deterministic link workflow, and icon upload.
  *
  * The slug is read-only. It is the path prefix baked into shipped binaries
  * (`pathPrefix` in the Android manifest, `components` in the AASA), so changing
  * it would silently break every installed copy of the app.
  */
 
-const BEHAVIOR_HELP = {
-  interstitial: 'Show the download page',
-  storeDirect: 'Redirect straight to the store',
-  portal: 'Redirect to the web portal',
-};
-
-export default function AppEditor({ app, behaviors, platforms, onSaved, onError }) {
+export default function AppEditor({ app, onSaved, onError }) {
   const [draft, setDraft] = useState(() => structuredClone(app));
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -28,8 +22,56 @@ export default function AppEditor({ app, behaviors, platforms, onSaved, onError 
   };
   const setIos = (patch) => set({ ios: { ...draft.ios, ...patch } });
   const setAndroid = (patch) => set({ android: { ...draft.android, ...patch } });
-  const setBehavior = (platform, value) =>
-    set({ behavior: { ...draft.behavior, [platform]: value } });
+  const setWeb = (patch) => set({ web: { ...draft.web, ...patch } });
+
+  const publishMissing = [
+    !draft.ios.bundleId?.trim() && 'iOS bundle ID',
+    !draft.ios.teamId?.trim() && 'Apple Team ID',
+    !draft.ios.appStoreId?.trim() && 'App Store ID',
+    !draft.android.packageName?.trim() && 'Android package name',
+    draft.android.sha256CertFingerprints.length === 0 && 'Android SHA-256 signing fingerprint',
+  ].filter(Boolean);
+
+  const nativeMissing = [
+    !draft.enabled && 'Publish the app configuration',
+    !draft.ios.bundleId?.trim() && 'iOS bundle ID',
+    !draft.ios.teamId?.trim() && 'Apple Team ID',
+    !draft.android.packageName?.trim() && 'Android package name',
+    draft.android.sha256CertFingerprints.length === 0 && 'Android SHA-256 signing fingerprint',
+  ].filter(Boolean);
+
+  function setEnabled(next) {
+    if (next && publishMissing.length) {
+      onError(`Complete these requirements before publishing:\n${publishMissing.join('\n')}`);
+      return;
+    }
+    onError('');
+    set({
+      enabled: next,
+      nativeDeepLinkEnabled: next ? draft.nativeDeepLinkEnabled : false,
+    });
+  }
+
+  function setNativeDeepLinks(next) {
+    if (next && nativeMissing.length) {
+      onError(`Complete these requirements before enabling open app when installed:\n${nativeMissing.join('\n')}`);
+      return;
+    }
+    onError('');
+    set({ nativeDeepLinkEnabled: next });
+  }
+
+  function setWebUrl(value) {
+    const url = value.trim() ? value : null;
+    set({
+      web: {
+        ...draft.web,
+        url,
+        showLink: url ? draft.web.showLink : false,
+        redirectDesktop: url ? draft.web.redirectDesktop : false,
+      },
+    });
+  }
 
   async function save() {
     setBusy(true);
@@ -93,15 +135,35 @@ export default function AppEditor({ app, behaviors, platforms, onSaved, onError 
           <small>Shown as the heading on the download page.</small>
         </label>
 
-        <label className="field field--toggle">
-          <input
-            type="checkbox"
-            checked={draft.enabled}
-            onChange={(e) => set({ enabled: e.target.checked })}
-          />
-          <span>Enabled</span>
-          <small>Disabling removes the app from both well-known files.</small>
-        </label>
+        <div className="field">
+          <span>Publishing status</span>
+          <div className="status-toggle" role="group" aria-label="Publishing status">
+            <button
+              type="button"
+              className={!draft.enabled ? 'status-toggle__btn status-toggle__btn--active' : 'status-toggle__btn'}
+              onClick={() => setEnabled(false)}
+            >
+              Draft
+            </button>
+            <button
+              type="button"
+              className={draft.enabled ? 'status-toggle__btn status-toggle__btn--active' : 'status-toggle__btn'}
+              onClick={() => setEnabled(true)}
+            >
+              Published
+            </button>
+          </div>
+          <small>Published apps are live. Draft apps remain editable but cannot claim links.</small>
+        </div>
+      </div>
+
+      <div className={publishMissing.length ? 'readiness-card readiness-card--pending' : 'readiness-card readiness-card--ready'}>
+        <strong>{publishMissing.length ? 'Publishing requirements' : 'Ready to publish'}</strong>
+        {publishMissing.length ? (
+          <ul>{publishMissing.map((item) => <li key={item}>{item}</li>)}</ul>
+        ) : (
+          <p>Both iOS and Android association details are complete.</p>
+        )}
       </div>
 
       {/* ── Icon ────────────────────────────────────────────────────────── */}
@@ -123,54 +185,84 @@ export default function AppEditor({ app, behaviors, platforms, onSaved, onError 
         </div>
       </div>
 
-      {/* ── Behavior matrix ─────────────────────────────────────────────── */}
-      <h3>What happens when the link is opened</h3>
-      <div className="grid grid--3">
-        {platforms.map((platform) => (
-          <label className="field" key={platform}>
-            <span>{platform === 'ios' ? 'iOS' : platform === 'android' ? 'Android' : 'Desktop'}</span>
-            <select
-              value={draft.behavior[platform]}
-              onChange={(e) => setBehavior(platform, e.target.value)}
-            >
-              {behaviors
-                // There is no store to send a desktop browser to.
-                .filter((b) => !(platform === 'desktop' && b === 'storeDirect'))
-                .map((b) => (
-                  <option key={b} value={b}>
-                    {BEHAVIOR_HELP[b]}
-                  </option>
-                ))}
-            </select>
-          </label>
+      {/* ── Mobile workflow ─────────────────────────────────────────────── */}
+      <h3>iOS and Android link workflow</h3>
+      <p className="note">
+        Mobile links never redirect to the app&rsquo;s web URL. The operating system opens a
+        compatible installed app only when native opening is enabled; every request that reaches
+        this service goes to the correct platform store.
+      </p>
+      <div className="workflow-grid">
+        {['iOS', 'Android'].map((platform) => (
+          <div className="workflow-card" key={platform}>
+            <strong>{platform}</strong>
+            <div><span>App not installed</span><b>Open {platform === 'iOS' ? 'App Store' : 'Play Store'}</b></div>
+            <div>
+              <span>App installed</span>
+              <b>{draft.nativeDeepLinkEnabled ? 'Open app' : `Open ${platform === 'iOS' ? 'App Store' : 'Play Store'}`}</b>
+            </div>
+          </div>
         ))}
+      </div>
+
+      <h3>Web experience</h3>
+      <label className="field">
+        <span>Individual web URL</span>
+        <input
+          type="url"
+          value={draft.web.url || ''}
+          placeholder="https://tenant.example.com"
+          onChange={(e) => setWebUrl(e.target.value)}
+        />
+        <small>This exact URL is used. Universal-link paths are not appended.</small>
+      </label>
+      <div className="toggle-stack">
+        <label className="field field--toggle">
+          <input
+            type="checkbox"
+            checked={draft.web.showLink}
+            disabled={!draft.web.url}
+            onChange={(e) => setWeb({ showLink: e.target.checked })}
+          />
+          <span>Show “Continue on web” on every landing page</span>
+        </label>
+        <label className="field field--toggle">
+          <input
+            type="checkbox"
+            checked={draft.web.redirectDesktop}
+            disabled={!draft.web.url}
+            onChange={(e) => setWeb({ redirectDesktop: e.target.checked })}
+          />
+          <span>Redirect desktop browsers directly to web</span>
+          <small>Off by default. When off, desktop visitors see the QR/download page.</small>
+        </label>
       </div>
 
       <label className="field field--toggle">
         <input
           type="checkbox"
-          checked={draft.openAppIfInstalled}
-          onChange={(e) => set({ openAppIfInstalled: e.target.checked })}
+          checked={draft.nativeDeepLinkEnabled}
+          onChange={(e) => setNativeDeepLinks(e.target.checked)}
         />
-        <span>Open the app directly when it is installed (not ready yet)</span>
+        <span>Enable open app when installed</span>
       </label>
-      <p className="note">
-        <strong>Leave this off for now.</strong> It makes Android use an{' '}
-        <code>intent:</code> URL and iOS try <code>{draft.ios.scheme || 'scheme'}://</code>{' '}
-        before falling back to the store — but both need the app side to be able to receive
-        the link, which is not shipped yet. Turned on early, iOS users get an
-        &ldquo;Open in&nbsp;&hellip;?&rdquo; prompt that leads nowhere. With it off, every
-        visitor goes to the store or the portal, which always works.
-      </p>
-
-      <label className="field">
-        <span>Portal URL override</span>
-        <input
-          value={draft.portalUrlOverride || ''}
-          placeholder="(uses the global portal URL)"
-          onChange={(e) => set({ portalUrlOverride: e.target.value || null })}
-        />
-      </label>
+      <div className={nativeMissing.length ? 'readiness-card readiness-card--pending' : 'readiness-card readiness-card--ready'}>
+        <strong>
+          {nativeMissing.length
+            ? 'Native association requirements'
+            : draft.nativeDeepLinkEnabled
+              ? 'Native opening is active'
+              : 'Compatible releases are ready for activation'}
+        </strong>
+        {nativeMissing.length ? (
+          <ul>{nativeMissing.map((item) => <li key={item}>{item}</li>)}</ul>
+        ) : (
+          <p>
+            This shared switch publishes both AASA and Android association statements.
+            Enable it shortly before installing the compatible TestFlight and internal-track builds.
+          </p>
+        )}
+      </div>
 
       {/* ── Platform identity ───────────────────────────────────────────── */}
       <h3>iOS</h3>
@@ -190,14 +282,6 @@ export default function AppEditor({ app, behaviors, platforms, onSaved, onError 
             value={draft.ios.appStoreId || ''}
             onChange={(e) => setIos({ appStoreId: e.target.value })}
           />
-        </label>
-        <label className="field">
-          <span>Custom URL scheme</span>
-          <input
-            value={draft.ios.scheme || ''}
-            onChange={(e) => setIos({ scheme: e.target.value })}
-          />
-          <small>Used by the fallback probe. Must match CFBundleURLSchemes.</small>
         </label>
       </div>
 

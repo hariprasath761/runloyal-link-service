@@ -7,19 +7,26 @@ import { databaseEnabled, query } from '../lib/database.js';
 import { validateApp } from './schema.js';
 
 let cache = null;
-const emptyState = () => ({ portalUrl: '', apps: [], legacyCodes: {} });
+const emptyState = () => ({ apps: [], legacyCodes: {} });
 
 function normalizeState(raw) {
     const apps = [];
     for (const entry of raw.apps || []) {
-        const result = validateApp(entry);
+        // Compatibility normalization for records written before per-app web
+        // settings and deterministic mobile store fallback.
+        const candidate = {
+            ...entry,
+            enabled: entry.enabled === undefined ? true : entry.enabled,
+        };
+
+        const result = validateApp(candidate);
         if (!result.ok) {
             console.error(`[appsRepository] skipping invalid app "${entry?.slug ?? '(no slug)'}": ${result.errors.join('; ')}`);
             continue;
         }
         apps.push(result.value);
     }
-    return { portalUrl: raw.portalUrl || '', apps, legacyCodes: raw.legacyCodes || {} };
+    return { apps, legacyCodes: raw.legacyCodes || {} };
 }
 
 function rowToApp(row) {
@@ -33,8 +40,12 @@ function rowToApp(row) {
             ios: row.ios,
             android: row.android,
             behavior: row.behavior,
-            openAppIfInstalled: row.open_app_if_installed,
-            portalUrlOverride: row.portal_url_override,
+            nativeDeepLinkEnabled: row.native_deep_link_enabled,
+            web: {
+                url: row.web_url,
+                showLink: row.web_show_link,
+                redirectDesktop: row.web_redirect_desktop,
+            },
         }],
     }).apps[0];
 }
@@ -49,8 +60,10 @@ function appToRow(app) {
         JSON.stringify(app.ios),
         JSON.stringify(app.android),
         JSON.stringify(app.behavior),
-        app.openAppIfInstalled,
-        app.portalUrlOverride,
+        app.nativeDeepLinkEnabled,
+        app.web.url,
+        app.web.showLink,
+        app.web.redirectDesktop,
     ];
 }
 
@@ -61,7 +74,6 @@ function readRaw() {
     try {
         const parsed = JSON.parse(fs.readFileSync(APPS_FILE, 'utf8'));
         return {
-            portalUrl: parsed.portalUrl || '',
             apps: Array.isArray(parsed.apps) ? parsed.apps : [],
             legacyCodes: parsed.legacyCodes || {},
         };
@@ -72,13 +84,11 @@ function readRaw() {
 }
 
 async function readDatabase() {
-    const [settings, apps, codes] = await Promise.all([
-        query('select portal_url from app_settings where id = true'),
+    const [apps, codes] = await Promise.all([
         query('select * from apps order by slug'),
         query('select code, slug, path, note from legacy_codes order by code'),
     ]);
     return {
-        portalUrl: settings.rows[0]?.portal_url || '',
         apps: apps.rows.map(rowToApp).filter(Boolean),
         legacyCodes: Object.fromEntries(
             codes.rows.map((row) => [row.code, { slug: row.slug, path: row.path, note: row.note }]),
@@ -99,8 +109,6 @@ export const getApp = async (slug) =>
 export const getEnabledApps = async () => (await getApps()).filter((app) => app.enabled);
 export const getLegacyCode = async (code) =>
     (await getState()).legacyCodes[String(code || '')] || null;
-export const portalUrlFor = async (app) =>
-    app?.portalUrlOverride || (await getState()).portalUrl || null;
 
 async function writeState(next) {
     fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -108,20 +116,6 @@ async function writeState(next) {
     await fsp.writeFile(tmp, JSON.stringify(next, null, 2) + '\n', 'utf8');
     await fsp.rename(tmp, APPS_FILE);
     cache = null;
-}
-
-export async function updateSettings({ portalUrl }) {
-    if (databaseEnabled) {
-        await query(
-            'update app_settings set portal_url = $1, updated_at = now() where id = true',
-            [String(portalUrl || '').trim()],
-        );
-        return getState();
-    }
-    const state = readRaw();
-    if (portalUrl !== undefined) state.portalUrl = String(portalUrl || '').trim();
-    await writeState(state);
-    return getState();
 }
 
 export async function upsertApp(input, { isNew = false } = {}) {
@@ -141,14 +135,15 @@ export async function upsertApp(input, { isNew = false } = {}) {
         await query(
             `insert into apps
         (slug, display_name, tagline, enabled, icon_path, ios, android, behavior,
-         open_app_if_installed, portal_url_override, updated_at)
-       values ($1,$2,$3,$4,$5,$6::jsonb,$7::jsonb,$8::jsonb,$9,$10,now())
+         native_deep_link_enabled, web_url, web_show_link, web_redirect_desktop, updated_at)
+       values ($1,$2,$3,$4,$5,$6::jsonb,$7::jsonb,$8::jsonb,$9,$10,$11,$12,now())
        on conflict (slug) do update set
          display_name=excluded.display_name, tagline=excluded.tagline,
          enabled=excluded.enabled, icon_path=excluded.icon_path, ios=excluded.ios,
          android=excluded.android, behavior=excluded.behavior,
-         open_app_if_installed=excluded.open_app_if_installed,
-         portal_url_override=excluded.portal_url_override, updated_at=now()`,
+         native_deep_link_enabled=excluded.native_deep_link_enabled,
+         web_url=excluded.web_url, web_show_link=excluded.web_show_link,
+         web_redirect_desktop=excluded.web_redirect_desktop, updated_at=now()`,
             appToRow(result.value),
         );
     } else {

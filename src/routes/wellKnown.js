@@ -22,8 +22,8 @@ import { isAasaReady, isAssetlinksReady } from '../store/schema.js';
 
 const router = express.Router();
 
-/** Path scope for a tenant. Everything under `/t/<slug>/` belongs to that app. */
-const pathPrefixFor = (app) => `/t/${app.slug}`;
+/** Path scope for a tenant. Everything under `/app/<slug>/` belongs to that app. */
+const pathPrefixFor = (app) => `/app/${app.slug}`;
 
 /**
  * Apple App Site Association.
@@ -37,8 +37,12 @@ export function buildAasa(apps = []) {
     appIDs: [`${app.ios.teamId}.${app.ios.bundleId}`],
     components: [
       {
+        '/': pathPrefixFor(app),
+        comment: `Base link for ${app.displayName}`,
+      },
+      {
         '/': `${pathPrefixFor(app)}/*`,
-        comment: `Deep links for ${app.displayName}`,
+        comment: `Nested links for ${app.displayName}`,
       },
     ],
   }));

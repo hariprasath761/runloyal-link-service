@@ -1,35 +1,24 @@
-/**
- * Admin API client.
- *
- * The bearer token is held in sessionStorage rather than localStorage: this is
- * a shared PoC secret, and it should not survive a closed tab.
- */
+/** Admin API client backed by a short-lived Supabase Auth session. */
 
-const TOKEN_KEY = 'rl-link-admin-token';
+const SESSION_KEY = 'rl-link-admin-session';
 
-export const getToken = () => sessionStorage.getItem(TOKEN_KEY) || '';
-export const setToken = (t) => sessionStorage.setItem(TOKEN_KEY, t);
-export const clearToken = () => sessionStorage.removeItem(TOKEN_KEY);
-
-async function request(method, url, body) {
-  const headers = { Authorization: `Bearer ${getToken()}` };
-  let payload;
-
-  if (body instanceof FormData) {
-    payload = body; // let the browser set the multipart boundary
-  } else if (body !== undefined) {
-    headers['Content-Type'] = 'application/json';
-    payload = JSON.stringify(body);
+export function getSession() {
+  try {
+    return JSON.parse(sessionStorage.getItem(SESSION_KEY) || 'null');
+  } catch {
+    return null;
   }
+}
 
-  const res = await fetch(url, { method, headers, body: payload });
+function setSession(session) {
+  sessionStorage.setItem(SESSION_KEY, JSON.stringify(session));
+  return session;
+}
 
-  if (res.status === 401) {
-    clearToken();
-    throw new Error('Unauthorized — check the admin token');
-  }
+export const clearSession = () => sessionStorage.removeItem(SESSION_KEY);
+
+async function parseResponse(res) {
   if (res.status === 204) return null;
-
   const text = await res.text();
   let data = null;
   try {
@@ -37,28 +26,66 @@ async function request(method, url, body) {
   } catch {
     throw new Error(text.slice(0, 200) || `Request failed (${res.status})`);
   }
-
   if (!res.ok) {
-    // The API returns `errors: []` for validation failures and `error` for
-    // everything else. Flatten both into one message.
     const message = Array.isArray(data?.errors)
       ? data.errors.join('\n')
       : data?.error || `Request failed (${res.status})`;
-    throw new Error(message);
+    const error = new Error(message);
+    error.status = res.status;
+    throw error;
   }
   return data;
 }
 
+export async function login(email, password) {
+  const res = await fetch('/api/admin/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password }),
+  });
+  return setSession(await parseResponse(res));
+}
+
+async function refreshSession() {
+  const current = getSession();
+  if (!current?.refreshToken) throw new Error('Your session has expired. Please sign in again.');
+  const res = await fetch('/api/admin/auth/refresh', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ refreshToken: current.refreshToken }),
+  });
+  return setSession(await parseResponse(res));
+}
+
+async function request(method, url, body, allowRefresh = true) {
+  const session = getSession();
+  const headers = session?.accessToken ? { Authorization: `Bearer ${session.accessToken}` } : {};
+  let payload;
+
+  if (body instanceof FormData) {
+    payload = body;
+  } else if (body !== undefined) {
+    headers['Content-Type'] = 'application/json';
+    payload = JSON.stringify(body);
+  }
+
+  const res = await fetch(url, { method, headers, body: payload });
+  if (res.status === 401 && allowRefresh && session?.refreshToken) {
+    try {
+      await refreshSession();
+      return request(method, url, body, false);
+    } catch {
+      clearSession();
+      throw new Error('Your session has expired. Please sign in again.');
+    }
+  }
+  return parseResponse(res);
+}
+
 export const fetchConfig = () => request('GET', '/api/admin/config');
-export const fetchWellKnown = () => request('GET', '/api/admin/wellknown');
-export const saveSettings = (portalUrl) => request('PUT', '/api/admin/settings', { portalUrl });
 export const createApp = (app) => request('POST', '/api/admin/apps', app);
 export const updateApp = (slug, app) => request('PUT', `/api/admin/apps/${slug}`, app);
 export const removeApp = (slug) => request('DELETE', `/api/admin/apps/${slug}`);
-export const saveLegacyCode = (code, mapping) =>
-  request('PUT', `/api/admin/legacy/${encodeURIComponent(code)}`, mapping);
-export const removeLegacyCode = (code) =>
-  request('DELETE', `/api/admin/legacy/${encodeURIComponent(code)}`);
 
 export function uploadIcon(slug, file) {
   const form = new FormData();

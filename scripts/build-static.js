@@ -74,11 +74,11 @@ function writeWellKnown(apps) {
 
 /* ── Per-app page ─────────────────────────────────────────────────────────── */
 
-async function writeAppPages(apps, portalUrl) {
+async function writeAppPages(apps) {
   const template = fs.readFileSync(path.join(VIEWS_DIR, 'interstitial.ejs'), 'utf8');
 
   for (const app of apps) {
-    const canonical = `https://${LINK_HOST}/t/${app.slug}`;
+    const canonical = `https://${LINK_HOST}/app/${app.slug}`;
 
     // Baked for the base link so the QR works with JavaScript disabled. When a
     // deeper path is open, the boot script redraws it for that exact URL.
@@ -96,12 +96,9 @@ async function writeAppPages(apps, portalUrl) {
 
     const clientConfig = {
       slug: app.slug,
-      behavior: app.behavior,
-      openAppIfInstalled: app.openAppIfInstalled,
       appStoreId: app.ios.appStoreId,
       packageName: app.android.packageName,
-      scheme: app.ios.scheme,
-      portalUrl: app.portalUrlOverride || portalUrl || null,
+      web: app.web,
     };
 
     const html = ejs.render(
@@ -126,19 +123,17 @@ async function writeAppPages(apps, portalUrl) {
         playStoreUrl: app.android.packageName
           ? `https://play.google.com/store/apps/details?id=${app.android.packageName}`
           : null,
-        portalUrl: clientConfig.portalUrl,
-        intentUrl: null,
-        schemeUrl: null,
-        probe: { ios: null, android: null },
+        webUrl: app.web.url,
+        showWebLink: app.web.showLink,
         storeUrl: null,
       },
       { filename: path.join(VIEWS_DIR, 'interstitial.ejs') },
     );
 
-    const dir = path.join(DIST, 't', app.slug);
+    const dir = path.join(DIST, 'app', app.slug);
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(path.join(dir, 'index.html'), html);
-    log(`t/${app.slug}/index.html`);
+    log(`app/${app.slug}/index.html`);
   }
 }
 
@@ -182,7 +177,7 @@ function buildQrBundle() {
  *
  * Nothing routes through `/`, so this used to be a one-line stub — which made
  * the bare domain look like a broken deploy to anyone who opened it before
- * knowing the `/t/<slug>` grammar. Listing the apps costs nothing and answers
+ * knowing the `/app/<slug>` grammar. Listing the apps costs nothing and answers
  * the question the URL bar invites.
  */
 function writeIndex(apps) {
@@ -191,13 +186,12 @@ function writeIndex(apps) {
 
   const rows = apps
     .map((app) => {
-      const behavior = ['ios', 'android', 'desktop']
-        .map((p) => `${p}: ${app.behavior[p]}`)
-        .join(' · ');
+      const desktop = app.web.redirectDesktop ? 'web redirect' : 'interstitial';
+      const behavior = `iOS: App Store fallback · Android: Play Store fallback · desktop: ${desktop}`;
       return `    <li class="row">
       ${app.iconPath ? `<img src="${escape(app.iconPath)}" alt="" width="44" height="44">` : '<span class="ph"></span>'}
       <span class="meta">
-        <a href="/t/${escape(app.slug)}">/t/${escape(app.slug)}</a>
+        <a href="/app/${escape(app.slug)}">/app/${escape(app.slug)}</a>
         <strong>${escape(app.displayName)}</strong>
         <small>${escape(behavior)}</small>
       </span>
@@ -234,7 +228,7 @@ function writeIndex(apps) {
 </head><body>
 <main>
   <h1>RunLoyal link service</h1>
-  <p class="sub">Deep links live under <code>/t/&lt;app&gt;</code>. Nothing is served from this page.</p>
+  <p class="sub">Deep links live under <code>/app/&lt;app&gt;</code>.</p>
   <ul>
 ${rows}
   </ul>
@@ -295,17 +289,20 @@ function writeFirebaseJson(apps, legacyCodes) {
         const target = String(mapping.path || '').replace(/^\/+|\/+$/g, '');
         return {
           source: `/${code}`,
-          destination: `/t/${mapping.slug}${target ? `/${target}` : ''}`,
+          destination: `/app/${mapping.slug}${target ? `/${target}` : ''}`,
           type: 302,
         };
       }),
 
       // One page per app serves every path beneath it; the boot script reads
       // the action and token out of location.pathname. Both patterns are
-      // needed — "/t/kennel/**" does not match "/t/kennel" itself.
+      // needed — "/app/kennel/**" does not match "/app/kennel" itself.
       rewrites: apps.flatMap((app) => [
-        { source: `/t/${app.slug}`, destination: `/t/${app.slug}/index.html` },
-        { source: `/t/${app.slug}/**`, destination: `/t/${app.slug}/index.html` },
+        { source: `/app/${app.slug}`, destination: `/app/${app.slug}/index.html` },
+        { source: `/app/${app.slug}/**`, destination: `/app/${app.slug}/index.html` },
+        // Compatibility for links issued before `/app` became canonical.
+        { source: `/t/${app.slug}`, destination: `/app/${app.slug}/index.html` },
+        { source: `/t/${app.slug}/**`, destination: `/app/${app.slug}/index.html` },
       ]),
     },
   };
@@ -331,7 +328,7 @@ async function main() {
   fs.mkdirSync(DIST, { recursive: true });
 
   writeWellKnown(apps);
-  await writeAppPages(apps, state.portalUrl);
+  await writeAppPages(apps);
 
   copyDir(PUBLIC_DIR, DIST);
   copyDir(UPLOADS_DIR, path.join(DIST, 'uploads'));

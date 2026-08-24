@@ -6,13 +6,18 @@ import path from 'node:path';
 import { query } from '../src/lib/database.js';
 import { validateApp } from '../src/store/schema.js';
 
-const state = JSON.parse(await fs.readFile(new URL('../data/apps.json', import.meta.url), 'utf8'));
+const migrationsDir = new URL('../supabase/migrations/', import.meta.url);
+const migrations = (await fs.readdir(migrationsDir)).filter((name) => name.endsWith('.sql')).sort();
+for (const name of migrations) {
+    await query(await fs.readFile(new URL(name, migrationsDir), 'utf8'));
+}
 
-const migration = await fs.readFile(
-    new URL('../supabase/migrations/001_initial.sql', import.meta.url),
-    'utf8',
-);
-await query(migration);
+if (!process.argv.includes('--import')) {
+    console.log(`Applied ${migrations.length} Supabase migrations. Checked-in seed data was not imported.`);
+    process.exit(0);
+}
+
+const state = JSON.parse(await fs.readFile(new URL('../data/apps.json', import.meta.url), 'utf8'));
 
 const mimeByExtension = {
     '.jpg': 'image/jpeg',
@@ -31,12 +36,6 @@ async function databaseIcon(iconPath) {
     return `data:${mime};base64,${bytes.toString('base64')}`;
 }
 
-await query(
-    `insert into app_settings (id, portal_url, updated_at) values (true, $1, now())
-   on conflict (id) do update set portal_url = excluded.portal_url, updated_at = now()`,
-    [state.portalUrl || ''],
-);
-
 for (const input of state.apps || []) {
     const result = validateApp(input);
     if (!result.ok) throw new Error(`${input.slug || '(unknown app)'}: ${result.errors.join('; ')}`);
@@ -45,13 +44,14 @@ for (const input of state.apps || []) {
     await query(
         `insert into apps
       (slug, display_name, tagline, enabled, icon_path, ios, android, behavior,
-       open_app_if_installed, portal_url_override, updated_at)
-     values ($1,$2,$3,$4,$5,$6::jsonb,$7::jsonb,$8::jsonb,$9,$10,now())
+       native_deep_link_enabled, web_url, web_show_link, web_redirect_desktop, updated_at)
+     values ($1,$2,$3,$4,$5,$6::jsonb,$7::jsonb,$8::jsonb,$9,$10,$11,$12,now())
      on conflict (slug) do update set display_name=excluded.display_name,
        tagline=excluded.tagline, enabled=excluded.enabled, icon_path=excluded.icon_path,
        ios=excluded.ios, android=excluded.android, behavior=excluded.behavior,
-       open_app_if_installed=excluded.open_app_if_installed,
-       portal_url_override=excluded.portal_url_override, updated_at=now()`,
+       native_deep_link_enabled=excluded.native_deep_link_enabled,
+       web_url=excluded.web_url, web_show_link=excluded.web_show_link,
+       web_redirect_desktop=excluded.web_redirect_desktop, updated_at=now()`,
         [
             app.slug,
             app.displayName,
@@ -61,8 +61,10 @@ for (const input of state.apps || []) {
             JSON.stringify(app.ios),
             JSON.stringify(app.android),
             JSON.stringify(app.behavior),
-            app.openAppIfInstalled,
-            app.portalUrlOverride,
+            app.nativeDeepLinkEnabled,
+            app.web.url,
+            app.web.showLink,
+            app.web.redirectDesktop,
         ],
     );
 }
@@ -75,4 +77,7 @@ for (const [code, mapping] of Object.entries(state.legacyCodes || {})) {
     );
 }
 
-console.log(`Imported ${state.apps?.length || 0} apps and ${Object.keys(state.legacyCodes || {}).length} legacy codes.`);
+console.log(
+    `Applied ${migrations.length} migrations and imported ${state.apps?.length || 0} apps ` +
+    `and ${Object.keys(state.legacyCodes || {}).length} legacy codes.`,
+);

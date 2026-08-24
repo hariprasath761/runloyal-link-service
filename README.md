@@ -20,7 +20,7 @@ downloaded `/.well-known/apple-app-site-association` (iOS, at install and period
 `/.well-known/assetlinks.json` (Android, at install) and knows which app owns that URL. It
 opens the app. No HTTP request reaches this service at all.
 
-So every request that *does* arrive at `GET /t/:slug/*` means one of two things:
+So every request that *does* arrive at `GET /app/:slug/*` means one of two things:
 
 1. the app is not installed, or
 2. the link was opened somewhere Universal Links do not fire — pasted into Chrome's address
@@ -46,9 +46,9 @@ Two modes, and they are not alternatives — you use both.
 
 ```bash
 npm install
-cp .env.example .env      # set LINK_HOST and ADMIN_TOKEN
+cp .env.example .env      # set LINK_HOST, Supabase Auth, and ADMIN_EMAILS
 npm run admin:build       # builds the admin SPA into admin-dist/
-npm start                 # http://localhost:3000  (+ /admin)
+npm start                 # http://localhost:3000 redirects to /admin
 ```
 
 **Deployed**, it is a static site on Firebase Hosting — see [§3](#3-hosting-on-firebase-free-spark-plan):
@@ -61,16 +61,36 @@ So the workflow is: edit and preview locally in `/admin` → `npm run deploy` to
 
 | URL | What it is |
 |---|---|
-| `/t/:slug/*` | The link itself — platform-aware redirect or download page |
+| `/app/:slug/*` | Canonical app link — native interception or platform fallback |
+| `/t/:slug/*` | Compatibility redirect for links issued before `/app` |
 | `/.well-known/apple-app-site-association` | AASA, generated from `data/apps.json` |
 | `/.well-known/assetlinks.json` | Digital Asset Links, generated from `data/apps.json` |
-| `/admin` | Config UI — behavior matrix, icon upload, legacy codes |
+| `/admin` | Email/password admin UI — apps, publishing, links, and icon upload |
 | `/healthz` | Boot sanity: app count, AASA entries, assetlink statements |
 | `/:code` | Legacy Branch short-code resolution |
 | `/api/deeplink/{resolve,pending}` | Deferred deep-link contract stubs |
 
-`data/apps.json` is the single source of truth. Both `.well-known` files are generated from
-it on every request, so there is no separate publish step and no way for them to drift.
+Supabase is the source of truth when its connection variables are configured; otherwise the
+service falls back to `data/apps.json`. Both `.well-known` files use the same repository as
+the admin API, so there is no separate configuration that can drift.
+
+Admin login always uses Supabase Auth, even when app configuration is stored in JSON. Create
+the admin users under **Supabase → Authentication → Users**, set `SUPABASE_URL` and
+`SUPABASE_ANON_KEY`, and put the permitted addresses in the comma-separated `ADMIN_EMAILS`
+environment variable. The browser receives short-lived access and refresh tokens; no shared
+admin secret is pasted into the UI.
+
+Apply schema migrations without modifying existing app records:
+
+```bash
+npm run migrate:supabase
+```
+
+For a brand-new database only, explicitly import the checked-in JSON seed after migrating:
+
+```bash
+npm run import:supabase
+```
 
 ---
 
@@ -115,7 +135,7 @@ exactly what Universal Links and App Links need, and what a tunnel struggles to 
 |---|---|
 | `.well-known/apple-app-site-association` | Generated, extensionless |
 | `.well-known/assetlinks.json` | Generated |
-| `t/<slug>/index.html` | One page per app; a Hosting rewrite points every path beneath it here |
+| `app/<slug>/index.html` | One page per app; a Hosting rewrite points every path beneath it here |
 | `qr.js` | Loaded only on desktop, and only for deep paths |
 | `firebase.json` | **Generated** — rewrites and redirects derive from `apps.json` |
 
@@ -155,8 +175,8 @@ firebase projects:create runloyal-link-poc     # or use an existing project
 npm run deploy                                  # build + test + firebase deploy
 ```
 
-`npm run deploy` runs `build:static`, then `npm test` (the boot-script decision tests), then
-deploys — so a bad redirect decision fails before it ships.
+`npm run deploy` runs `build:static`, then `npm test` (schema, API, server-routing, and
+boot-script decision tests), then deploys — so a bad redirect decision fails before it ships.
 
 Verify the live site with `./scripts/verify.sh https://runloyal-link-poc.web.app`.
 
@@ -172,15 +192,20 @@ it catches all three traps above before a deploy.
 
 ---
 
-## 4. Behavior configuration
+## 4. Link workflow configuration
 
-Per app, per platform, from `/admin`:
+Each app owns its web destination; there is no common portal fallback. New apps are created
+as disabled drafts in `/admin` and can be published only after the iOS bundle/team/store
+details and Android package/signing fingerprint are complete.
 
-| Behavior | iOS / Android | Desktop |
-|---|---|---|
-| `interstitial` | Download page | Download page with QR |
-| `storeDirect` | 302 to App Store / Play | Falls back to interstitial — there is no store |
-| `portal` | 302 to the web portal | 302 to the web portal |
+Mobile behavior is intentionally deterministic. If native opening is enabled and a compatible
+app is installed, iOS or Android opens it before the service receives a request. Otherwise,
+iOS goes to the App Store and Android goes to Play. There is no mobile web-URL redirect choice.
+
+Desktop renders the download page with its QR unless **Redirect desktop browsers directly
+to web** is enabled for that app. **Show Continue on web** independently adds the exact
+per-app URL to every rendered landing page. Both controls are off by default, and deep-link
+paths are not appended to the web URL.
 
 `crawler` and `inAppWebview` are deliberately **not** configurable:
 
@@ -189,28 +214,65 @@ Per app, per platform, from `/admin`:
   and every preview stays wrong for weeks.
 - An in-app webview always gets the interstitial, because that is the only surface where the
   "Open in browser" escape hatch can be shown — and Universal Links do not fire inside those
-  webviews at all.
+  webviews at all. Its optional "Continue on web" action follows the app's show-link toggle.
 
-### `openAppIfInstalled` — off, and should stay off for now
+### Production native opening
 
-**Opening an installed app straight from the browser is deferred.** The toggle and both
-implementations are built and working, but they are switched off by default because they
-need the app side to be able to receive a link, which has not shipped.
+The admin option **Enable open app when installed** controls `nativeDeepLinkEnabled`, a shared,
+default-off release gate for iOS and Android. When it
+is off, the app stays out of both association files and every request follows its normal
+store fallback. When it is on, qualifying links are intercepted by the OS and delivered
+to a compatible installed app before this service receives a request.
 
-Turned on prematurely, iOS visitors get an "Open in …?" system prompt that leads nowhere —
-strictly worse than going to the store. With it off, every visitor lands on the store or the
-portal, which always works.
+This service deliberately does not use custom URL schemes, Android `intent:` redirects,
+timers, or automatic browser launch attempts. Typing or pasting a URL into a browser remains
+a browser navigation. The admin switch must be enabled only when both compatible native
+builds are ready.
 
-When the app side is ready, flipping it on gives:
+#### Native release contract
 
-- **Android** — an `intent://` URL with `S.browser_fallback_url`. Chrome resolves it
-  natively: app if installed, Play Store if not. No timer, no error banner, no race.
-- **iOS** — a `<scheme>://` probe with a ~1.2 s visibility timer before falling back to the
-  App Store. Best-effort only, and bound to a real tap rather than firing on page load,
-  because an unprompted scheme navigation reads as a hijack.
+For the complete individual Flutter application setup and release checklist, see
+[Flutter Native Link Integration](docs/flutter-native-link-integration.md).
 
-Note that neither is the *primary* mechanism even then — see the Overview. A link tapped
-from Messages or Mail is intercepted by the OS before any request reaches this service.
+The iOS build must:
+
+- include `applinks:<LINK_HOST>` in Associated Domains and use a regenerated provisioning
+  profile;
+- handle Universal Links on both cold launch and while the app is running;
+- validate the host and `/app/<slug>` tenant prefix before passing the remaining path to the
+  app router.
+
+The Android build must:
+
+- declare verified HTTPS intent filters with `android:autoVerify="true"`, `DEFAULT`, and
+  `BROWSABLE`;
+- use separate exact `/app/<slug>` and subtree `/app/<slug>/` filters so one tenant slug cannot
+  match another tenant with the same prefix;
+- handle both the initial intent and new intents delivered to a running activity.
+
+Both apps open home for a bare or unknown route, reject malformed or wrong-tenant URLs, and
+must never crash on invalid link input. Screen mapping stays inside the native app; the link
+service treats the remaining path as opaque.
+
+Because current releases do not claim this host, enable the association switch shortly
+before installing the compatible TestFlight/internal-track builds, verify clean-install and
+warm-app links, and then release those builds publicly. Publishing the association first
+avoids install-time verification and Apple CDN cache delays without affecting old versions.
+
+Release acceptance must cover the base link and a nested link on both a clean launch and a
+running app. On iOS, tap the links from Messages or Mail and confirm that typing the same URL
+in Safari stays in Safari. On an Android internal-track build, also verify domain state and
+launch routing with:
+
+```bash
+adb shell pm verify-app-links --re-verify <package-name>
+adb shell pm get-app-links <package-name>
+adb shell am start -W -a android.intent.action.VIEW \
+  -d "https://<link-host>/app/<slug>/appointment/123"
+```
+
+After uninstalling each app, the same links must return to its platform store. Embedded
+in-app browsers remain on the landing page so they can show an “Open in browser” escape hatch.
 
 ---
 
@@ -261,15 +323,11 @@ sit under Team `E8Q47GVS49`.
 
 ## 7. Known limits (PoC scope)
 
-0. **Opening an installed app directly is deferred** — see [§4](#openappifinstalled--off-and-should-stay-off-for-now).
-   What this PoC proves today is the web half: platform detection, the download page, and
-   store / portal redirects. The `.well-known` files are still generated and served
-   correctly, so the app-side half can be switched on later without touching this service.
-1. **Admin auth is a single shared bearer token.** No user model, no audit trail, no
-   rotation. Adequate behind a private tunnel and nothing more.
-2. **`data/apps.json` is a file, not a database.** Writes are atomic (temp file + rename)
-   and cached in-process, but there is no locking — concurrent admin writes from two
-   processes would race. Single-process only.
+1. **Admin authorization is an email allowlist.** Supabase Auth handles passwords and token
+   rotation, but roles and an audit trail are not yet implemented.
+2. **Without Supabase configured, `data/apps.json` is the fallback store.** Writes are atomic
+   (temp file + rename) and cached in-process, but there is no locking — concurrent admin
+   writes from two processes would race. Use Supabase for multi-instance deployments.
 3. **Deferred deep linking is stubbed.** `/api/deeplink/resolve` and `/pending` return the
    right shape so the pet-owner apps can be written against them, but no Flutter-side Play
    Install Referrer read or post-auth iOS lookup exists. The referrer API does not work on
@@ -283,13 +341,14 @@ sit under Team `E8Q47GVS49`.
 
 ## 8. Scaling notes for the 300-app migration
 
-- **AASA is capped at 128 KB by Apple.** At ~170 bytes per minified entry, 300 tenants land
-  around 50–55 KB. Plan a second host (`link2.runloyal.com`) before ~550. `/admin` →
-  well-known reports the live size; `verify.sh` fails the build past the limit and warns
+- **AASA is capped at 128 KB by Apple.** With exact and subtree path components, each entry
+  adds about 267 bytes and 300 tenants land around 78 KB. Plan a second host
+  (`link2.runloyal.com`) before the 100 KB warning at roughly 380 tenants. `/admin` →
+  the admin API reports the live size; `verify.sh` fails the build past the limit and warns
   past 100 KB.
 - **Path scoping is mandatory, not an optimisation.** Without per-tenant `components` /
   `pathPrefix`, any installed tenant app claims every path on the domain. Android 14 and
-  below ignore server-side path rules entirely, so the manifest `pathPrefix` is what
+  below ignore server-side path rules entirely, so the manifest path filters are what
   actually enforces this.
 - **Add the AASA entry at flavor-creation time, not on release day.** Apple serves the file
   through its own CDN with no manual invalidation, so a tenant added on launch day can have

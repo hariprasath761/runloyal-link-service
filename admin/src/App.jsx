@@ -1,20 +1,19 @@
 import { useCallback, useEffect, useState } from 'react';
 
 import * as api from './api.js';
+import AddApp from './components/AddApp.jsx';
 import AppEditor from './components/AppEditor.jsx';
-import LegacyCodes from './components/LegacyCodes.jsx';
 import Login from './components/Login.jsx';
 import Preview from './components/Preview.jsx';
-import WellKnownPanel from './components/WellKnownPanel.jsx';
 
 export default function App() {
-  const [authed, setAuthed] = useState(Boolean(api.getToken()));
+  const [authed, setAuthed] = useState(Boolean(api.getSession()));
   const [config, setConfig] = useState(null);
   const [selected, setSelected] = useState(null);
   const [error, setError] = useState('');
-  const [tab, setTab] = useState('apps');
+  const [adding, setAdding] = useState(false);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (preferredSlug = null) => {
     try {
       const data = await api.fetchConfig();
       setConfig(data);
@@ -22,11 +21,15 @@ export default function App() {
       // Keep the current selection across reloads so saving does not bounce
       // the operator back to the first app in the list.
       setSelected((prev) =>
-        prev && data.apps.some((a) => a.slug === prev) ? prev : data.apps[0]?.slug || null,
+        preferredSlug && data.apps.some((a) => a.slug === preferredSlug)
+          ? preferredSlug
+          : prev && data.apps.some((a) => a.slug === prev)
+            ? prev
+            : data.apps[0]?.slug || null,
       );
     } catch (err) {
       setError(err.message);
-      if (/unauthorized/i.test(err.message)) setAuthed(false);
+      if (/session|sign in|authenticat|unauthorized/i.test(err.message)) setAuthed(false);
     }
   }, []);
 
@@ -54,21 +57,11 @@ export default function App() {
           <h1>Link Service</h1>
           <p className="topbar__host">{config?.linkHost || '…'}</p>
         </div>
-        <nav className="tabs">
-          {['apps', 'well-known', 'legacy'].map((t) => (
-            <button
-              key={t}
-              className={tab === t ? 'tab tab--active' : 'tab'}
-              onClick={() => setTab(t)}
-            >
-              {t}
-            </button>
-          ))}
-        </nav>
+        <span className="topbar__user">{config?.admin?.email || ''}</span>
         <button
           className="btn btn--ghost"
           onClick={() => {
-            api.clearToken();
+            api.clearSession();
             setAuthed(false);
           }}
         >
@@ -78,12 +71,16 @@ export default function App() {
 
       {error ? <div className="banner banner--error">{error}</div> : null}
 
-      {tab === 'apps' ? (
-        <div className="layout">
+      <div className="layout">
           <aside className="sidebar">
             <div className="sidebar__head">
               <span>Apps</span>
-              <span className="count">{config?.apps.length ?? 0}</span>
+              <span className="sidebar__actions">
+                <span className="count">{config?.apps.length ?? 0}</span>
+                <button className="btn btn--small btn--primary" onClick={() => setAdding(true)}>
+                  Add app
+                </button>
+              </span>
             </div>
             <ul className="applist">
               {config?.apps.map((a) => (
@@ -97,7 +94,8 @@ export default function App() {
                     </span>
                     <span className="applist__text">
                       <strong>{a.displayName}</strong>
-                      <small>/t/{a.slug}</small>
+                      <small>/app/{a.slug}</small>
+                      {!a.enabled ? <em className="draft">Draft</em> : null}
                     </span>
                     {/* Readiness at a glance: an app missing from a well-known
                         file is otherwise only discoverable via a device that
@@ -105,14 +103,22 @@ export default function App() {
                     <span className="readiness">
                       <i
                         className={a.readiness.aasa ? 'dot dot--ok' : 'dot dot--bad'}
-                        title={a.readiness.aasa ? 'In AASA' : 'Missing from AASA (needs Team ID)'}
+                        title={
+                          a.readiness.aasa
+                            ? 'In AASA'
+                            : !a.nativeDeepLinkEnabled
+                              ? 'Not in AASA (native opening is disabled)'
+                              : `Not in AASA (${a.readiness.native.missing.join(', ')})`
+                        }
                       />
                       <i
                         className={a.readiness.assetlinks ? 'dot dot--ok' : 'dot dot--bad'}
                         title={
                           a.readiness.assetlinks
                             ? 'In assetlinks.json'
-                            : 'Missing from assetlinks.json (needs a SHA-256 fingerprint)'
+                            : !a.nativeDeepLinkEnabled
+                              ? 'Not in assetlinks.json (native opening is disabled)'
+                              : `Not in assetlinks.json (${a.readiness.native.missing.join(', ')})`
                         }
                       />
                     </span>
@@ -128,8 +134,6 @@ export default function App() {
                 <AppEditor
                   key={app.slug}
                   app={app}
-                  behaviors={config.behaviors}
-                  platforms={config.platforms}
                   onSaved={load}
                   onError={setError}
                 />
@@ -139,18 +143,16 @@ export default function App() {
               <p className="empty">No apps configured.</p>
             )}
           </main>
-        </div>
-      ) : null}
+      </div>
 
-      {tab === 'well-known' ? <WellKnownPanel onError={setError} /> : null}
-
-      {tab === 'legacy' ? (
-        <LegacyCodes
-          codes={config?.legacyCodes || {}}
-          apps={config?.apps || []}
-          linkHost={config?.linkHost}
-          onSaved={load}
+      {adding ? (
+        <AddApp
+          onClose={() => setAdding(false)}
           onError={setError}
+          onCreated={async (slug) => {
+            await load(slug);
+            setAdding(false);
+          }}
         />
       ) : null}
     </div>
