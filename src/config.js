@@ -33,19 +33,18 @@ export const SUPABASE_URL = process.env.SUPABASE_URL || '';
 export const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || '';
 export const ADMIN_EMAILS = process.env.ADMIN_EMAILS || '';
 
-export const DATA_DIR = path.isAbsolute(process.env.DATA_DIR || '')
-  ? process.env.DATA_DIR
-  : path.join(ROOT, process.env.DATA_DIR || 'data');
-
-export const APPS_FILE = path.join(DATA_DIR, 'apps.json');
-export const UPLOADS_DIR = path.join(DATA_DIR, 'uploads');
-
 export const VIEWS_DIR = path.join(ROOT, 'src', 'views');
 export const PUBLIC_DIR = path.join(ROOT, 'public');
 export const ADMIN_DIST_DIR = path.join(ROOT, 'admin-dist');
 
 /**
- * Absolute public base URL. Always https — Universal Links and App Links both
- * refuse to verify over http, so there is no scheme to configure.
+ * Public base URL for a request. Vercel and other proxies provide the original
+ * host through X-Forwarded-Host; LINK_HOST remains the build-time fallback for
+ * static pages and scripts that have no request context.
  */
-export const publicBaseUrl = () => `https://${LINK_HOST}`;
+export const publicBaseUrl = (req) => {
+	const forwardedHost = String(req?.get?.('x-forwarded-host') || '').split(',')[0].trim();
+	const requestHost = forwardedHost || String(req?.get?.('host') || '').trim();
+	const host = requestHost || LINK_HOST;
+	return `https://${host}`;
+};

@@ -8,8 +8,8 @@
  *   - computed in the browser by the boot script (platform detection, redirects).
  *
  * Consequence to be aware of: **config changes require a redeploy.** The admin
- * UI still runs locally against `npm start` and writes data/apps.json; this
- * script turns that file into the deployed site.
+ * UI still runs locally against `npm start` and writes Supabase; this script
+ * turns the current Supabase records into the deployed site.
  *
  * One upside of going static: crawlers get correct behaviour for free. Bots do
  * not execute JavaScript, so they receive the HTML with its OG tags and are
@@ -24,7 +24,7 @@ import path from 'node:path';
 import ejs from 'ejs';
 import QRCode from 'qrcode';
 
-import { LINK_HOST, PUBLIC_DIR, ROOT, UPLOADS_DIR, VIEWS_DIR } from '../src/config.js';
+import { LINK_HOST, PUBLIC_DIR, ROOT, VIEWS_DIR } from '../src/config.js';
 import { buildAasa, buildAssetlinks } from '../src/routes/wellKnown.js';
 import { getEnabledApps, getState } from '../src/store/appsRepository.js';
 
@@ -318,7 +318,7 @@ async function main() {
   const apps = await getEnabledApps();
 
   if (apps.length === 0) {
-    console.error('No enabled apps in data/apps.json — nothing to build.');
+    console.error('No enabled apps in Supabase — nothing to build.');
     process.exit(1);
   }
 
@@ -331,8 +331,7 @@ async function main() {
   await writeAppPages(apps);
 
   copyDir(PUBLIC_DIR, DIST);
-  copyDir(UPLOADS_DIR, path.join(DIST, 'uploads'));
-  log('copied public/ and uploads/');
+  log('copied public/');
 
   buildQrBundle();
 

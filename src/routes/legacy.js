@@ -42,7 +42,7 @@ router.get('/:code', async (req, res, next) => {
   }
 
   const path = String(mapping.path || '').replace(/^\/+/, '');
-  const target = `${publicBaseUrl()}/app/${app.slug}${path ? `/${path}` : ''}`;
+  const target = `${publicBaseUrl(req)}/app/${app.slug}${path ? `/${path}` : ''}`;
 
   // 302 rather than 301: these mappings are editable from the admin UI, and a
   // permanent redirect would be cached in browsers past any correction.

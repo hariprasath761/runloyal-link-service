@@ -63,16 +63,17 @@ So the workflow is: edit and preview locally in `/admin` → `npm run deploy` to
 |---|---|
 | `/app/:slug/*` | Canonical app link — native interception or platform fallback |
 | `/t/:slug/*` | Compatibility redirect for links issued before `/app` |
-| `/.well-known/apple-app-site-association` | AASA, generated from `data/apps.json` |
-| `/.well-known/assetlinks.json` | Digital Asset Links, generated from `data/apps.json` |
+| `/.well-known/apple-app-site-association` | AASA, generated from Supabase app records |
+| `/.well-known/assetlinks.json` | Digital Asset Links, generated from Supabase app records |
 | `/admin` | Email/password admin UI — apps, publishing, links, and icon upload |
 | `/healthz` | Boot sanity: app count, AASA entries, assetlink statements |
 | `/:code` | Legacy Branch short-code resolution |
 | `/api/deeplink/{resolve,pending}` | Deferred deep-link contract stubs |
 
-Supabase is the source of truth when its connection variables are configured; otherwise the
-service falls back to `data/apps.json`. Both `.well-known` files use the same repository as
-the admin API, so there is no separate configuration that can drift.
+Supabase is the only source of truth. The server refuses to start when its PostgreSQL
+connection variables are missing; it never falls back to a local configuration file. Both
+`.well-known` files use the same repository as the admin API, so there is no separate
+configuration that can drift.
 
 Admin login always uses Supabase Auth, even when app configuration is stored in JSON. Create
 the admin users under **Supabase → Authentication → Users**, set `SUPABASE_URL` and
@@ -80,16 +81,10 @@ the admin users under **Supabase → Authentication → Users**, set `SUPABASE_U
 environment variable. The browser receives short-lived access and refresh tokens; no shared
 admin secret is pasted into the UI.
 
-Apply schema migrations without modifying existing app records:
+Apply schema migrations:
 
 ```bash
 npm run migrate:supabase
-```
-
-For a brand-new database only, explicitly import the checked-in JSON seed after migrating:
-
-```bash
-npm run import:supabase
 ```
 
 ---
@@ -129,7 +124,7 @@ Deployed as a **static site**. Firebase Hosting gives a stable HTTPS hostname
 (`<project>.web.app`) with a real certificate and no interstitial warning page — which is
 exactly what Universal Links and App Links need, and what a tunnel struggles to provide.
 
-`npm run build:static` turns `data/apps.json` into `dist/`:
+`npm run build:static` turns the current Supabase configuration into `dist/`:
 
 | Output | Notes |
 |---|---|
@@ -142,7 +137,7 @@ exactly what Universal Links and App Links need, and what a tunnel struggles to 
 ### The trade-off
 
 There is no server, so **config changes require a redeploy**. The admin UI still runs
-locally against `npm start` — edit behavior, upload icons, preview — then rebuild and deploy.
+locally against `npm start` — edit configuration, upload icons, preview — then rebuild and deploy.
 The admin is deliberately *not* deployed: without an API it could not save anything, and a
 UI whose Save button silently fails is worse than no UI.
 
@@ -292,9 +287,9 @@ keytool -list -v -keystore ~/.android/debug.keystore \
   -alias androiddebugkey -storepass android | grep SHA256
 ```
 
-`data/apps.json` currently carries each app's upload-key fingerprint plus the local debug
-key, so debug builds verify during the PoC. **Both must be replaced with Play Console values
-before anything ships.**
+Only fingerprints saved in Supabase are published. Remove temporary debug or upload-key
+fingerprints when they are no longer needed and always retain the Play App Signing value for
+production.
 
 ---
 
@@ -325,9 +320,9 @@ sit under Team `E8Q47GVS49`.
 
 1. **Admin authorization is an email allowlist.** Supabase Auth handles passwords and token
    rotation, but roles and an audit trail are not yet implemented.
-2. **Without Supabase configured, `data/apps.json` is the fallback store.** Writes are atomic
-   (temp file + rename) and cached in-process, but there is no locking — concurrent admin
-   writes from two processes would race. Use Supabase for multi-instance deployments.
+2. **Supabase availability is required.** The service fails explicitly when database settings
+   are missing and returns an error during a database outage; it never serves a stale local
+   copy of app configuration.
 3. **Deferred deep linking is stubbed.** `/api/deeplink/resolve` and `/pending` return the
    right shape so the pet-owner apps can be written against them, but no Flutter-side Play
    Install Referrer read or post-auth iOS lookup exists. The referrer API does not work on

@@ -43,9 +43,9 @@ function deepLinkPathFrom(req, slug) {
 }
 
 /** Absolute canonical URL for this link — what the QR encodes. */
-function canonicalUrl(slug, deepLinkPath) {
+function canonicalUrl(req, slug, deepLinkPath) {
   const suffix = deepLinkPath ? `/${deepLinkPath}` : '';
-  return `${publicBaseUrl()}/app/${slug}${suffix}`;
+  return `${publicBaseUrl(req)}/app/${slug}${suffix}`;
 }
 
 /**
@@ -65,7 +65,7 @@ export async function buildLinkContext(req, app, deepLinkPath) {
   const { platform, os, forced } = detectPlatform(req);
   const behavior = resolveBehavior(app, platform);
 
-  const canonical = canonicalUrl(app.slug, deepLinkPath);
+  const canonical = canonicalUrl(req, app.slug, deepLinkPath);
   const referrer = referrerToken(app.slug, deepLinkPath);
 
   const ios = appStoreUrl(app);

@@ -5,11 +5,9 @@ import express from 'express';
 import {
   ADMIN_DIST_DIR,
   ADMIN_EMAILS,
-  APPS_FILE,
   LINK_HOST,
   PORT,
   PUBLIC_DIR,
-  UPLOADS_DIR,
   VIEWS_DIR,
   SUPABASE_ANON_KEY,
   SUPABASE_URL,
@@ -20,7 +18,14 @@ import deeplinkApi from './routes/deeplinkApi.js';
 import legacy from './routes/legacy.js';
 import wellKnown from './routes/wellKnown.js';
 import { buildAasa, buildAssetlinks } from './routes/wellKnown.js';
+import { databaseEnabled } from './lib/database.js';
 import { getEnabledApps } from './store/appsRepository.js';
+
+if (!databaseEnabled) {
+  throw new Error(
+    'Supabase is required. Set SUPABASE_DB_HOST, SUPABASE_DB_USER, and SUPABASE_DB_PASSWORD.',
+  );
+}
 
 const app = express();
 
@@ -56,7 +61,6 @@ app.use(wellKnown);
 // Static assets. `redirect: false` stops express.static from issuing the
 // directory trailing-slash 301.
 app.use(express.static(PUBLIC_DIR, { redirect: false, fallthrough: true }));
-app.use('/uploads', express.static(UPLOADS_DIR, { redirect: false, fallthrough: true }));
 
 app.get('/healthz', async (req, res, next) => {
   try {
@@ -118,7 +122,7 @@ if (process.env.VERCEL !== '1') app.listen(PORT, async () => {
   const apps = await getEnabledApps();
   console.log(`\nRunLoyal link service on :${PORT}`);
   console.log(`  public host   https://${LINK_HOST}`);
-  console.log(`  config        ${APPS_FILE}`);
+  console.log('  config        Supabase PostgreSQL');
   console.log(`  apps          ${apps.map((a) => a.slug).join(', ') || '(none)'}`);
   console.log(`  AASA entries  ${buildAasa(apps).applinks.details.length}`);
   console.log(`  assetlinks    ${buildAssetlinks(apps).length}`);

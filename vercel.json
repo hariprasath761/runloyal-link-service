@@ -3,7 +3,7 @@
     "buildCommand": "npm run admin:build",
     "functions": {
         "api/index.js": {
-            "includeFiles": "{admin-dist,src,public,data}/**"
+            "includeFiles": "{admin-dist,src,public}/**"
         }
     },
     "routes": [

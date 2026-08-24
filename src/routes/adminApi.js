@@ -1,7 +1,7 @@
 import express from 'express';
 import multer from 'multer';
 
-import { LINK_HOST } from '../config.js';
+import { publicBaseUrl } from '../config.js';
 import { AuthError, loginAdmin, refreshAdmin, verifyAdmin } from '../lib/adminAuth.js';
 import { buildAasa, buildAssetlinks } from './wellKnown.js';
 import {
@@ -86,7 +86,7 @@ router.get('/api/admin/config', requireAdmin, async (req, res, next) => {
   try {
     const state = await getState();
     res.json({
-      linkHost: LINK_HOST,
+      linkHost: new URL(publicBaseUrl(req)).host,
       admin: req.admin,
       apps: state.apps.map((app) => ({
         ...app,
@@ -99,7 +99,7 @@ router.get('/api/admin/config', requireAdmin, async (req, res, next) => {
           publish: publishReadiness(app),
           native: nativeDeepLinkReadiness(app),
         },
-        linkUrl: `https://${LINK_HOST}/app/${app.slug}`,
+        linkUrl: `${publicBaseUrl(req)}/app/${app.slug}`,
       })),
       legacyCodes: state.legacyCodes,
     });

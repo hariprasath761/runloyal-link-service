@@ -8,12 +8,12 @@ import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
 
 import { LINK_HOST } from '../src/config.js';
+import { getEnabledApps } from '../src/store/appsRepository.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const DIST = path.join(ROOT, 'dist');
 const ORIGIN = `https://${LINK_HOST}`;
-const config = JSON.parse(fs.readFileSync(path.join(ROOT, 'data', 'apps.json'), 'utf8'));
-const enabledApps = config.apps.filter((app) => app.enabled);
+const enabledApps = await getEnabledApps();
 const first = enabledApps[0];
 
 const UA = {

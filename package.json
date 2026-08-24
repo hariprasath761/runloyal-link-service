@@ -15,7 +15,6 @@
     "build": "npm run admin:build",
     "build:static": "node scripts/build-static.js",
     "migrate:supabase": "node scripts/migrate-supabase.mjs",
-    "import:supabase": "node scripts/migrate-supabase.mjs --import",
     "deploy": "npm run build:static && npm test && firebase deploy --only hosting",
     "verify": "bash scripts/verify.sh",
     "test": "node scripts/test-core.mjs && node scripts/test-server.mjs && node scripts/test-boot.mjs"

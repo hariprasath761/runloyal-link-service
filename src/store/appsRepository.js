@@ -1,53 +1,42 @@
-import fs from 'node:fs';
-import fsp from 'node:fs/promises';
-import path from 'node:path';
-
-import { APPS_FILE, DATA_DIR, UPLOADS_DIR } from '../config.js';
-import { databaseEnabled, query } from '../lib/database.js';
+import { query } from '../lib/database.js';
 import { validateApp } from './schema.js';
 
-let cache = null;
-const emptyState = () => ({ apps: [], legacyCodes: {} });
-
-function normalizeState(raw) {
+function normalizeApps(entries) {
     const apps = [];
-    for (const entry of raw.apps || []) {
-        // Compatibility normalization for records written before per-app web
-        // settings and deterministic mobile store fallback.
-        const candidate = {
+    for (const entry of entries) {
+        const result = validateApp({
             ...entry,
             enabled: entry.enabled === undefined ? true : entry.enabled,
-        };
-
-        const result = validateApp(candidate);
+        });
         if (!result.ok) {
-            console.error(`[appsRepository] skipping invalid app "${entry?.slug ?? '(no slug)'}": ${result.errors.join('; ')}`);
+            console.error(
+                `[appsRepository] skipping invalid app "${entry?.slug ?? '(no slug)'}": ` +
+                result.errors.join('; '),
+            );
             continue;
         }
         apps.push(result.value);
     }
-    return { apps, legacyCodes: raw.legacyCodes || {} };
+    return apps;
 }
 
 function rowToApp(row) {
-    return normalizeState({
-        apps: [{
-            slug: row.slug,
-            displayName: row.display_name,
-            tagline: row.tagline,
-            enabled: row.enabled,
-            iconPath: row.icon_path,
-            ios: row.ios,
-            android: row.android,
-            behavior: row.behavior,
-            nativeDeepLinkEnabled: row.native_deep_link_enabled,
-            web: {
-                url: row.web_url,
-                showLink: row.web_show_link,
-                redirectDesktop: row.web_redirect_desktop,
-            },
-        }],
-    }).apps[0];
+    return normalizeApps([{
+        slug: row.slug,
+        displayName: row.display_name,
+        tagline: row.tagline,
+        enabled: row.enabled,
+        iconPath: row.icon_path,
+        ios: row.ios,
+        android: row.android,
+        behavior: row.behavior,
+        nativeDeepLinkEnabled: row.native_deep_link_enabled,
+        web: {
+            url: row.web_url,
+            showLink: row.web_show_link,
+            redirectDesktop: row.web_redirect_desktop,
+        },
+    }])[0];
 }
 
 function appToRow(app) {
@@ -67,22 +56,6 @@ function appToRow(app) {
     ];
 }
 
-function readRaw() {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
-    fs.mkdirSync(UPLOADS_DIR, { recursive: true });
-    if (!fs.existsSync(APPS_FILE)) return emptyState();
-    try {
-        const parsed = JSON.parse(fs.readFileSync(APPS_FILE, 'utf8'));
-        return {
-            apps: Array.isArray(parsed.apps) ? parsed.apps : [],
-            legacyCodes: parsed.legacyCodes || {},
-        };
-    } catch (err) {
-        console.error(`[appsRepository] ${APPS_FILE} is not valid JSON`, err);
-        return emptyState();
-    }
-}
-
 async function readDatabase() {
     const [apps, codes] = await Promise.all([
         query('select * from apps order by slug'),
@@ -96,12 +69,9 @@ async function readDatabase() {
     };
 }
 
-export async function getState() {
-    if (databaseEnabled) return readDatabase();
-    if (cache) return cache;
-    cache = normalizeState(readRaw());
-    return cache;
-}
+// Supabase is the only runtime source of truth. A missing database configuration
+// is an operational error instead of silently switching to a local JSON copy.
+export const getState = () => readDatabase();
 
 export const getApps = async () => (await getState()).apps;
 export const getApp = async (slug) =>
@@ -109,14 +79,6 @@ export const getApp = async (slug) =>
 export const getEnabledApps = async () => (await getApps()).filter((app) => app.enabled);
 export const getLegacyCode = async (code) =>
     (await getState()).legacyCodes[String(code || '')] || null;
-
-async function writeState(next) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
-    const tmp = path.join(DATA_DIR, `.apps.json.${process.pid}.tmp`);
-    await fsp.writeFile(tmp, JSON.stringify(next, null, 2) + '\n', 'utf8');
-    await fsp.rename(tmp, APPS_FILE);
-    cache = null;
-}
 
 export async function upsertApp(input, { isNew = false } = {}) {
     const state = await getState();
@@ -131,95 +93,50 @@ export async function upsertApp(input, { isNew = false } = {}) {
         result.value.iconPath = existing.iconPath;
     }
 
-    if (databaseEnabled) {
-        await query(
-            `insert into apps
-        (slug, display_name, tagline, enabled, icon_path, ios, android, behavior,
-         native_deep_link_enabled, web_url, web_show_link, web_redirect_desktop, updated_at)
-       values ($1,$2,$3,$4,$5,$6::jsonb,$7::jsonb,$8::jsonb,$9,$10,$11,$12,now())
-       on conflict (slug) do update set
-         display_name=excluded.display_name, tagline=excluded.tagline,
-         enabled=excluded.enabled, icon_path=excluded.icon_path, ios=excluded.ios,
-         android=excluded.android, behavior=excluded.behavior,
-         native_deep_link_enabled=excluded.native_deep_link_enabled,
-         web_url=excluded.web_url, web_show_link=excluded.web_show_link,
-         web_redirect_desktop=excluded.web_redirect_desktop, updated_at=now()`,
-            appToRow(result.value),
-        );
-    } else {
-        const raw = readRaw();
-        const index = raw.apps.findIndex(
-            (app) => String(app.slug || '').toLowerCase() === result.value.slug,
-        );
-        if (index >= 0) raw.apps[index] = result.value;
-        else raw.apps.push(result.value);
-        await writeState(raw);
-    }
+    await query(
+        `insert into apps
+      (slug, display_name, tagline, enabled, icon_path, ios, android, behavior,
+       native_deep_link_enabled, web_url, web_show_link, web_redirect_desktop, updated_at)
+     values ($1,$2,$3,$4,$5,$6::jsonb,$7::jsonb,$8::jsonb,$9,$10,$11,$12,now())
+     on conflict (slug) do update set
+       display_name=excluded.display_name, tagline=excluded.tagline,
+       enabled=excluded.enabled, icon_path=excluded.icon_path, ios=excluded.ios,
+       android=excluded.android, behavior=excluded.behavior,
+       native_deep_link_enabled=excluded.native_deep_link_enabled,
+       web_url=excluded.web_url, web_show_link=excluded.web_show_link,
+       web_redirect_desktop=excluded.web_redirect_desktop, updated_at=now()`,
+        appToRow(result.value),
+    );
     return { ok: true, value: result.value };
 }
 
 export async function deleteApp(slug) {
-    const target = String(slug || '').toLowerCase();
-    if (databaseEnabled) {
-        const result = await query('delete from apps where slug = $1', [target]);
-        return result.rowCount > 0;
-    }
-    const state = readRaw();
-    const before = state.apps.length;
-    state.apps = state.apps.filter(
-        (app) => String(app.slug || '').toLowerCase() !== target,
-    );
-    if (state.apps.length === before) return false;
-    await writeState(state);
-    return true;
+    const result = await query('delete from apps where slug = $1', [String(slug || '').toLowerCase()]);
+    return result.rowCount > 0;
 }
 
 export async function setAppIcon(slug, iconPath) {
-    const target = String(slug || '').toLowerCase();
-    if (databaseEnabled) {
-        const result = await query(
-            'update apps set icon_path = $1, updated_at = now() where slug = $2',
-            [iconPath, target],
-        );
-        return result.rowCount > 0;
-    }
-    const state = readRaw();
-    const app = state.apps.find((entry) => String(entry.slug).toLowerCase() === target);
-    if (!app) return false;
-    app.iconPath = iconPath;
-    await writeState(state);
-    return true;
+    const result = await query(
+        'update apps set icon_path = $1, updated_at = now() where slug = $2',
+        [iconPath, String(slug || '').toLowerCase()],
+    );
+    return result.rowCount > 0;
 }
 
 export async function setLegacyCode(code, mapping) {
-    const key = String(code || '').trim();
-    if (databaseEnabled) {
-        await query(
-            `insert into legacy_codes (code, slug, path, note) values ($1,$2,$3,$4)
-       on conflict (code) do update set slug=excluded.slug, path=excluded.path, note=excluded.note`,
-            [key, mapping.slug, mapping.path || '', mapping.note || null],
-        );
-        return true;
-    }
-    const state = readRaw();
-    state.legacyCodes[key] = mapping;
-    await writeState(state);
+    await query(
+        `insert into legacy_codes (code, slug, path, note) values ($1,$2,$3,$4)
+     on conflict (code) do update set slug=excluded.slug, path=excluded.path, note=excluded.note`,
+        [String(code || '').trim(), mapping.slug, mapping.path || '', mapping.note || null],
+    );
     return true;
 }
 
 export async function deleteLegacyCode(code) {
-    const key = String(code || '').trim();
-    if (databaseEnabled) {
-        const result = await query('delete from legacy_codes where code = $1', [key]);
-        return result.rowCount > 0;
-    }
-    const state = readRaw();
-    if (!(key in state.legacyCodes)) return false;
-    delete state.legacyCodes[key];
-    await writeState(state);
-    return true;
+    const result = await query('delete from legacy_codes where code = $1', [String(code || '').trim()]);
+    return result.rowCount > 0;
 }
 
-export const invalidate = () => {
-    cache = null;
-};
+// Kept as a harmless compatibility export for callers that previously cleared
+// the JSON cache. Supabase reads are intentionally fresh on every request.
+export const invalidate = () => {};

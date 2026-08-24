@@ -1,13 +1,65 @@
 #!/usr/bin/env node
 
 import assert from 'node:assert/strict';
-import fs from 'node:fs/promises';
 import http from 'node:http';
-import os from 'node:os';
-import path from 'node:path';
+import pg from 'pg';
 
-const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'runloyal-link-test-'));
-await fs.writeFile(path.join(tempDir, 'apps.json'), JSON.stringify({ apps: [], legacyCodes: {} }));
+const appRows = [];
+const legacyRows = [];
+
+// Runtime storage remains Supabase-only. This integration test replaces pg's
+// network boundary with a small in-memory PostgreSQL response double.
+pg.Pool.prototype.query = async (sql, values = []) => {
+  const statement = String(sql).replace(/\s+/g, ' ').trim().toLowerCase();
+
+  if (statement.startsWith('select * from apps')) {
+    return { rows: [...appRows].sort((a, b) => a.slug.localeCompare(b.slug)), rowCount: appRows.length };
+  }
+  if (statement.startsWith('select code, slug, path, note from legacy_codes')) {
+    return { rows: [...legacyRows], rowCount: legacyRows.length };
+  }
+  if (statement.startsWith('insert into apps')) {
+    const row = {
+      slug: values[0], display_name: values[1], tagline: values[2], enabled: values[3],
+      icon_path: values[4], ios: JSON.parse(values[5]), android: JSON.parse(values[6]),
+      behavior: JSON.parse(values[7]), native_deep_link_enabled: values[8], web_url: values[9],
+      web_show_link: values[10], web_redirect_desktop: values[11],
+    };
+    const index = appRows.findIndex((app) => app.slug === row.slug);
+    if (index >= 0) appRows[index] = row;
+    else appRows.push(row);
+    return { rows: [], rowCount: 1 };
+  }
+  if (statement.startsWith('delete from apps')) {
+    const index = appRows.findIndex((app) => app.slug === values[0]);
+    if (index < 0) return { rows: [], rowCount: 0 };
+    appRows.splice(index, 1);
+    for (let i = legacyRows.length - 1; i >= 0; i--) {
+      if (legacyRows[i].slug === values[0]) legacyRows.splice(i, 1);
+    }
+    return { rows: [], rowCount: 1 };
+  }
+  if (statement.startsWith('update apps set icon_path')) {
+    const row = appRows.find((app) => app.slug === values[1]);
+    if (!row) return { rows: [], rowCount: 0 };
+    row.icon_path = values[0];
+    return { rows: [], rowCount: 1 };
+  }
+  if (statement.startsWith('insert into legacy_codes')) {
+    const row = { code: values[0], slug: values[1], path: values[2], note: values[3] };
+    const index = legacyRows.findIndex((entry) => entry.code === row.code);
+    if (index >= 0) legacyRows[index] = row;
+    else legacyRows.push(row);
+    return { rows: [], rowCount: 1 };
+  }
+  if (statement.startsWith('delete from legacy_codes')) {
+    const index = legacyRows.findIndex((entry) => entry.code === values[0]);
+    if (index < 0) return { rows: [], rowCount: 0 };
+    legacyRows.splice(index, 1);
+    return { rows: [], rowCount: 1 };
+  }
+  throw new Error(`Unexpected test SQL: ${statement}`);
+};
 
 const authServer = http.createServer(async (req, res) => {
   const chunks = [];
@@ -44,11 +96,10 @@ await new Promise((resolve, reject) => {
   authServer.once('error', reject);
 });
 
-process.env.DATA_DIR = tempDir;
 process.env.LINK_HOST = 'links.example.test';
-process.env.SUPABASE_DB_HOST = '';
-process.env.SUPABASE_DB_USER = '';
-process.env.SUPABASE_DB_PASSWORD = '';
+process.env.SUPABASE_DB_HOST = 'supabase.test';
+process.env.SUPABASE_DB_USER = 'postgres.test';
+process.env.SUPABASE_DB_PASSWORD = 'test-password';
 process.env.SUPABASE_URL = `http://127.0.0.1:${authServer.address().port}`;
 process.env.SUPABASE_ANON_KEY = 'test-anon-key';
 process.env.ADMIN_EMAILS = 'admin@example.com';
@@ -151,7 +202,9 @@ try {
   assert.match(await crawler.text(), /property="og:url"/);
   console.log('  \x1b[32m✓\x1b[0m webviews render and crawlers receive metadata');
 
-  const configResponse = await fetch(`${origin}/api/admin/config`, { headers: auth });
+  const configResponse = await fetch(`${origin}/api/admin/config`, {
+    headers: { ...auth, 'X-Forwarded-Host': 'links.example.test' },
+  });
   const config = await configResponse.json();
   assert.equal(config.admin.email, 'admin@example.com');
   assert.equal(config.behaviors, undefined);
@@ -171,5 +224,4 @@ try {
 } finally {
   await new Promise((resolve) => server.close(resolve));
   await new Promise((resolve) => authServer.close(resolve));
-  await fs.rm(tempDir, { recursive: true, force: true });
 }
