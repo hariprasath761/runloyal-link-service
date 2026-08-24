@@ -27,12 +27,12 @@ export default function AddApp({ onClose, onCreated, onError }) {
         <div className="panel__head">
           <div>
             <h2>Add app</h2>
-            <p className="note">This creates a disabled draft. Add native platform details before publishing it.</p>
+            <p className="note">This creates a disabled draft. Add its App Store ID and Android package name before publishing.</p>
           </div>
           <button type="button" className="btn btn--ghost" onClick={onClose}>Cancel</button>
         </div>
         <label className="field">
-          <span>Slug</span>
+          <span>Slug<b className="required-mark" aria-hidden="true">*</b></span>
           <input
             autoFocus
             required
@@ -43,7 +43,7 @@ export default function AddApp({ onClose, onCreated, onError }) {
           <small>Becomes /app/tenant-name and cannot be changed after creation.</small>
         </label>
         <label className="field">
-          <span>Display name</span>
+          <span>Display name<b className="required-mark" aria-hidden="true">*</b></span>
           <input required value={displayName} onChange={(e) => setDisplayName(e.target.value)} />
         </label>
         <div className="modal__actions">

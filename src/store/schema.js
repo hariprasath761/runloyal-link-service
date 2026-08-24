@@ -32,16 +32,11 @@ export const defaultWeb = () => ({
   redirectDesktop: false,
 });
 
-/** Requirements that must be satisfied before an app can be published. */
+/** Store identifiers required for a published mobile fallback. */
 export function publishReadiness(app) {
   const missing = [];
-  if (!String(app?.ios?.bundleId || '').trim()) missing.push('iOS bundle ID');
-  if (!String(app?.ios?.teamId || '').trim()) missing.push('Apple Team ID');
   if (!String(app?.ios?.appStoreId || '').trim()) missing.push('App Store ID');
   if (!String(app?.android?.packageName || '').trim()) missing.push('Android package name');
-  if (!Array.isArray(app?.android?.sha256CertFingerprints) || app.android.sha256CertFingerprints.length === 0) {
-    missing.push('Android SHA-256 signing fingerprint');
-  }
   return { ready: missing.length === 0, missing };
 }
 

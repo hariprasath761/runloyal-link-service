@@ -123,6 +123,8 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 1
 .field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .field--wide { grid-column: 1 / -1; }
 .field > span { font-size: 12px; font-weight: 600; color: var(--muted); }
+.required-mark { color: var(--bad); margin-left: 3px; font-weight: 800; }
+.required-legend { margin: -6px 0 16px; color: var(--muted); font-size: 11px; }
 .field small { font-size: 12px; color: var(--muted); line-height: 1.45; }
 .field input, .field select, .field textarea {
   padding: 9px 11px; border: 1px solid var(--line); border-radius: var(--radius);

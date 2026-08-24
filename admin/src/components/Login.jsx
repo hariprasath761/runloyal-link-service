@@ -28,21 +28,29 @@ export default function Login({ onAuthed }) {
       <form className="login__card" onSubmit={submit}>
         <h1>Link Service Admin</h1>
         <p className="muted">Sign in with your authorized admin account.</p>
-        <input
-          type="email"
-          value={email}
-          autoFocus
-          autoComplete="username"
-          placeholder="Email"
-          onChange={(e) => setEmail(e.target.value)}
-        />
-        <input
-          type="password"
-          value={password}
-          autoComplete="current-password"
-          placeholder="Password"
-          onChange={(e) => setPassword(e.target.value)}
-        />
+        <label className="field">
+          <span>Email<b className="required-mark" aria-hidden="true">*</b></span>
+          <input
+            type="email"
+            value={email}
+            required
+            autoFocus
+            autoComplete="username"
+            placeholder="admin@example.com"
+            onChange={(e) => setEmail(e.target.value)}
+          />
+        </label>
+        <label className="field">
+          <span>Password<b className="required-mark" aria-hidden="true">*</b></span>
+          <input
+            type="password"
+            value={password}
+            required
+            autoComplete="current-password"
+            placeholder="Password"
+            onChange={(e) => setPassword(e.target.value)}
+          />
+        </label>
         {error ? <p className="error">{error}</p> : null}
         <button className="btn btn--primary" disabled={busy || !email.trim() || !password}>
           {busy ? 'Signing in…' : 'Sign in'}

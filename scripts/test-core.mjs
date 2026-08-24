@@ -56,8 +56,23 @@ test('new slugs reject duplicates and reserved service paths', () => {
 test('an incomplete app cannot be enabled', () => {
   const result = validateApp({ slug: 'new-tenant', displayName: 'New Tenant', enabled: true });
   assert.equal(result.ok, false);
-  assert.ok(result.errors.some((message) => message.includes('Apple Team ID')));
-  assert.ok(result.errors.some((message) => message.includes('Android SHA-256')));
+  assert.ok(result.errors.some((message) => message.includes('App Store ID')));
+  assert.ok(result.errors.some((message) => message.includes('Android package name')));
+});
+
+test('store-ready app can publish without native association fields', () => {
+  const result = validateApp({
+    slug: 'store-ready',
+    displayName: 'Store Ready',
+    enabled: true,
+    ios: { appStoreId: '1234567890' },
+    android: { packageName: 'com.runloyal.store.ready' },
+  });
+  assert.equal(result.ok, true, result.errors?.join('\n'));
+  assert.equal(result.value.ios.bundleId, '');
+  assert.equal(result.value.ios.teamId, '');
+  assert.deepEqual(result.value.android.sha256CertFingerprints, []);
+  assert.equal(result.value.nativeDeepLinkEnabled, false);
 });
 
 test('a complete app stays out of association files until native opening is enabled', () => {

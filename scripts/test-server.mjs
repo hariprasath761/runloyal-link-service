@@ -154,8 +154,20 @@ try {
 
   const incomplete = await jsonRequest('PUT', '/api/admin/apps/draft-one', { ...draft, enabled: true });
   assert.equal(incomplete.status, 400);
-  assert.match(JSON.stringify(await incomplete.json()), /Apple Team ID/);
+  assert.match(JSON.stringify(await incomplete.json()), /App Store ID/);
   console.log('  \x1b[32m✓\x1b[0m API blocks publishing an incomplete draft');
+
+  const storeReady = await jsonRequest('PUT', '/api/admin/apps/draft-one', {
+    ...draft,
+    enabled: true,
+    ios: { bundleId: '', teamId: '', appStoreId: '1234567890' },
+    android: { packageName: 'com.runloyal.draft.one', sha256CertFingerprints: [] },
+  });
+  assert.equal(storeReady.status, 200);
+  const storeReadyApp = await storeReady.json();
+  assert.equal(storeReadyApp.enabled, true);
+  assert.equal(storeReadyApp.nativeDeepLinkEnabled, false);
+  console.log('  \x1b[32m✓\x1b[0m store identifiers alone are sufficient to publish');
 
   const fingerprint = Array.from({ length: 32 }, (_, i) => (255 - i).toString(16).padStart(2, '0')).join(':');
   const target = 'https://tenant.example.com/exact?source=link';
@@ -240,7 +252,7 @@ try {
   assert.equal(assetlinks[0].target.package_name, 'com.runloyal.draft.one');
   console.log('  \x1b[32m✓\x1b[0m API readiness and OS association paths use /app');
 
-  console.log('\n\x1b[32mAll 12 passed\x1b[0m\n');
+  console.log('\n\x1b[32mAll 13 passed\x1b[0m\n');
 } finally {
   await new Promise((resolve) => server.close(resolve));
   await new Promise((resolve) => authServer.close(resolve));

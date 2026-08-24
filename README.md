@@ -190,8 +190,9 @@ it catches all three traps above before a deploy.
 ## 4. Link workflow configuration
 
 Each app owns its web destination; there is no common portal fallback. New apps are created
-as disabled drafts in `/admin` and can be published only after the iOS bundle/team/store
-details and Android package/signing fingerprint are complete.
+as disabled drafts in `/admin`. Publishing requires only the iOS App Store ID and Android
+package name needed for store fallback. The iOS bundle/Team IDs and Android signing
+fingerprint are required only when **Enable open app when installed** is activated.
 
 Mobile behavior is intentionally deterministic. If native opening is enabled and a compatible
 app is installed, iOS or Android opens it before the service receives a request. Otherwise,

@@ -335,6 +335,10 @@ For this individual application:
 6. Publish the app configuration.
 7. Keep **Enable open app when installed** off until compatible builds are uploaded.
 
+Publishing itself needs only the App Store ID and Android application ID so uninstalled
+users can reach the correct stores. The bundle ID, Team ID, and SHA-256 fingerprint become
+mandatory when **Enable open app when installed** is activated.
+
 Enabling the switch publishes both the iOS AASA entry and Android Digital Asset Links
 statement. It activates iOS and Android together, so both releases must be ready.
 

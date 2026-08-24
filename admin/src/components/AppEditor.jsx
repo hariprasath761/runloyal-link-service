@@ -25,11 +25,8 @@ export default function AppEditor({ app, onSaved, onError }) {
   const setWeb = (patch) => set({ web: { ...draft.web, ...patch } });
 
   const publishMissing = [
-    !draft.ios.bundleId?.trim() && 'iOS bundle ID',
-    !draft.ios.teamId?.trim() && 'Apple Team ID',
     !draft.ios.appStoreId?.trim() && 'App Store ID',
     !draft.android.packageName?.trim() && 'Android package name',
-    draft.android.sha256CertFingerprints.length === 0 && 'Android SHA-256 signing fingerprint',
   ].filter(Boolean);
 
   const nativeMissing = [
@@ -121,6 +118,10 @@ export default function AppEditor({ app, onSaved, onError }) {
         </div>
       </div>
 
+      <p className="required-legend">
+        <b className="required-mark" aria-hidden="true">*</b> Required field. Native-only fields are marked when open-app support is enabled.
+      </p>
+
       {/* ── Identity ────────────────────────────────────────────────────── */}
       <div className="grid">
         <label className="field">
@@ -130,7 +131,7 @@ export default function AppEditor({ app, onSaved, onError }) {
         </label>
 
         <label className="field">
-          <span>Display name</span>
+          <span>Display name<b className="required-mark" aria-hidden="true">*</b></span>
           <input value={draft.displayName} onChange={(e) => set({ displayName: e.target.value })} />
         </label>
 
@@ -163,11 +164,11 @@ export default function AppEditor({ app, onSaved, onError }) {
       </div>
 
       <div className={publishMissing.length ? 'readiness-card readiness-card--pending' : 'readiness-card readiness-card--ready'}>
-        <strong>{publishMissing.length ? 'Publishing requirements' : 'Ready to publish'}</strong>
+        <strong>{publishMissing.length ? 'Store publishing requirements' : 'Ready to publish'}</strong>
         {publishMissing.length ? (
           <ul>{publishMissing.map((item) => <li key={item}>{item}</li>)}</ul>
         ) : (
-          <p>Both iOS and Android association details are complete.</p>
+          <p>App Store and Play Store fallback details are complete.</p>
         )}
       </div>
 
@@ -273,34 +274,46 @@ export default function AppEditor({ app, onSaved, onError }) {
       <h3>iOS</h3>
       <div className="grid">
         <label className="field">
-          <span>Bundle ID</span>
+          <span>
+            Bundle ID
+            {draft.nativeDeepLinkEnabled ? <b className="required-mark" aria-hidden="true">*</b> : null}
+          </span>
           <input value={draft.ios.bundleId} onChange={(e) => setIos({ bundleId: e.target.value })} />
+          <small>Required only for “Enable open app when installed”.</small>
         </label>
         <label className="field">
-          <span>Apple Team ID</span>
+          <span>
+            Apple Team ID
+            {draft.nativeDeepLinkEnabled ? <b className="required-mark" aria-hidden="true">*</b> : null}
+          </span>
           <input value={draft.ios.teamId} onChange={(e) => setIos({ teamId: e.target.value })} />
-          <small>Required — the AASA entry is TEAMID.bundleId.</small>
+          <small>Required only for native opening — the AASA entry is TEAMID.bundleId.</small>
         </label>
         <label className="field">
-          <span>App Store ID</span>
+          <span>App Store ID<b className="required-mark" aria-hidden="true">*</b></span>
           <input
             value={draft.ios.appStoreId || ''}
             onChange={(e) => setIos({ appStoreId: e.target.value })}
           />
+          <small>Required to publish and open the App Store fallback.</small>
         </label>
       </div>
 
       <h3>Android</h3>
       <div className="grid">
         <label className="field">
-          <span>Package name</span>
+          <span>Package name<b className="required-mark" aria-hidden="true">*</b></span>
           <input
             value={draft.android.packageName}
             onChange={(e) => setAndroid({ packageName: e.target.value })}
           />
+          <small>Required to publish and open the Play Store fallback.</small>
         </label>
         <label className="field field--wide">
-          <span>SHA-256 certificate fingerprints</span>
+          <span>
+            SHA-256 certificate fingerprints
+            {draft.nativeDeepLinkEnabled ? <b className="required-mark" aria-hidden="true">*</b> : null}
+          </span>
           <textarea
             rows={4}
             value={draft.android.sha256CertFingerprints.join('\n')}
@@ -314,6 +327,7 @@ export default function AppEditor({ app, onSaved, onError }) {
             }
           />
           <small>
+            Required only for “Enable open app when installed”.{' '}
             One per line. Take these from <strong>Play Console → Release → Setup → App
             Signing</strong>, not a local keystore: Play re-signs the APK, so a local
             fingerprint verifies against nothing and App Links fail with no visible error.
