@@ -43,8 +43,8 @@ export const ADMIN_DIST_DIR = path.join(ROOT, 'admin-dist');
  * static pages and scripts that have no request context.
  */
 export const publicBaseUrl = (req) => {
-	const forwardedHost = String(req?.get?.('x-forwarded-host') || '').split(',')[0].trim();
-	const requestHost = forwardedHost || String(req?.get?.('host') || '').trim();
-	const host = requestHost || LINK_HOST;
-	return `https://${host}`;
+    const forwardedHost = String(req?.get?.('x-forwarded-host') || '').split(',')[0].trim();
+    const requestHost = forwardedHost || String(req?.get?.('host') || '').trim();
+    const host = requestHost || LINK_HOST;
+    return `https://${host}`;
 };
